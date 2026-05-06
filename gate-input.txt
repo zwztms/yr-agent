@@ -1,0 +1,3 @@
+当前停在门禁阶段是因为GOAL_DEFINITION和PLANNING阶段刚完成，系统需要开发者确认后才放行到EXECUTION阶段。当前阶段产出：1)目标分析——taskType=file_operation，目标为创建README.md，约束包括限定在workspace目录内操作、禁止网络访问、禁止路径穿越；2)工具选择——从4个本地工具中筛选，PolicyEngine将write_file标记为MUTATING需审批，run_command标记为DANGEROUS需审批，read_file和list_dir为READ_ONLY放行。我确认理解当前设计边界和目标。
+当前主要风险：1)LLM生成的执行计划可能包含未经授权的工具调用（如run_command），但PolicyEngine会在执行层拦截拒绝；2)write_file工具虽为MUTATING级别但本任务必须使用，我确认授权此工具的单次使用；3)文件路径可能写错（如双重嵌套workspace路径），但LocalToolExecutor的resolvePath沙盒机制会防路径穿越。人工接管口径：若执行计划出现DANGEROUS工具调用或不符合约束的步骤，系统自动拒绝并回传门禁重新确认。
+all

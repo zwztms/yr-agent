@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>yragent — 人机共驾</title>
+<style>
+  :root { --bg: #0d1117; --surface: #161b22; --border: #30363d; --text: #c9d1d9;
+          --muted: #8b949e; --accent: #58a6ff; --danger: #f85149; --success: #3fb950;
+          --warning: #d2991d; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font: 14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+         background: var(--bg); color: var(--text); height: 100vh; display: flex; }
+  #sidebar { width: 280px; background: var(--surface); border-right: 1px solid var(--border);
+             display: flex; flex-direction: column; flex-shrink: 0; }
+  #sidebar h2 { padding: 16px; font-size: 16px; color: var(--accent); border-bottom: 1px solid var(--border); }
+  #sidebar .subtitle { padding: 0 16px 8px; font-size: 12px; color: var(--muted); }
+  #task-list { flex: 1; overflow-y: auto; padding: 8px; }
+  #task-list .item { padding: 8px; margin-bottom: 4px; border-radius: 6px; cursor: pointer;
+                     font-size: 13px; border: 1px solid transparent; }
+  #task-list .item:hover { background: #1c2129; border-color: var(--border); }
+  #task-list .item.active { background: #1c2129; border-color: var(--accent); }
+  #task-list .item .id { color: var(--muted); font-size: 11px; }
+  #task-list .item .desc { margin-top: 2px; }
+  #task-list .item .stage { font-size: 11px; color: var(--warning); margin-top: 2px; }
+  #main { flex: 1; display: flex; flex-direction: column; }
+  #messages { flex: 1; overflow-y: auto; padding: 20px; }
+  .msg { margin-bottom: 12px; padding: 10px 14px; border-radius: 8px; max-width: 85%; font-size: 13px; }
+  .msg.user { background: #1f6feb22; border: 1px solid #1f6feb44; margin-left: auto; }
+  .msg.system { background: var(--surface); border: 1px solid var(--border); }
+  .msg .label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .msg .analysis-block { background: #0d1117; padding: 10px 12px; border-radius: 4px;
+                         margin: 8px 0; font-size: 12px; line-height: 1.7; white-space: pre-wrap; }
+  .msg .warning-block { background: #d2991d11; border: 1px solid #d2991d44; padding: 8px 12px;
+                        border-radius: 4px; margin: 8px 0; font-size: 12px; }
+  #input-area { border-top: 1px solid var(--border); padding: 16px; }
+  #input-area textarea { width: 100%; background: var(--surface); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 10px; font-size: 13px;
+    resize: vertical; min-height: 60px; outline: none; }
+  #input-area textarea:focus { border-color: var(--accent); }
+  .btn-row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+  button { padding: 6px 16px; border-radius: 6px; font-size: 13px; cursor: pointer;
+           border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.danger { border-color: var(--danger); color: var(--danger); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .gate-form { margin-top: 8px; padding: 12px; background: var(--surface);
+               border: 1px solid var(--border); border-radius: 6px; display: none; }
+  .gate-form .hint { font-size: 12px; color: var(--warning); margin-bottom: 10px; padding: 8px;
+                     background: #d2991d11; border-radius: 4px; border-left: 3px solid var(--warning); }
+  .gate-form .hint ul { margin: 6px 0 0 16px; }
+  .gate-form .hint li { margin-bottom: 3px; }
+  .gate-form input, .gate-form textarea { width: 100%; background: #0d1117; color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px; padding: 8px; font-size: 12px;
+    margin-bottom: 6px; outline: none; }
+  .gate-form textarea { min-height: 50px; resize: vertical; }
+  .gate-form label { font-size: 12px; color: var(--text); display: block; margin-top: 6px; font-weight: 600; }
+  .gate-form label .required { color: var(--danger); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+  .chip { padding: 4px 10px; border-radius: 12px; font-size: 11px; cursor: pointer;
+          border: 1px solid var(--border); background: var(--surface); }
+  .chip.selected { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .chip .chip-desc { display: none; }
+  .chip:hover .chip-desc { display: block; position: absolute; background: var(--surface);
+    border: 1px solid var(--border); padding: 6px 10px; border-radius: 4px; font-size: 11px;
+    max-width: 260px; z-index: 10; margin-top: 4px; }
+  .status-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+  .status-badge.通过 { background: var(--success); color: #000; }
+  .status-badge.已阻断 { background: var(--danger); }
+  .status-badge.需澄清 { background: var(--warning); color: #000; }
+  .status-badge.待确认 { background: var(--warning); color: #000; }
+  .status-badge.执行中 { background: var(--accent); }
+  .loading { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--muted);
+             border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .stage-map { font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h2>yragent</h2>
+  <div class="subtitle">人机共驾 · v1.0</div>
+  <div id="task-list"></div>
+  <div style="padding:8px;border-top:1px solid var(--border);">
+    <button onclick="newTask()" style="width:100%;">+ 新建任务</button>
+  </div>
+</div>
+
+<div id="main">
+  <div id="messages">
+    <div class="msg system">
+      <div class="label">yragent</div>
+      你好，我是人机共驾代理。输入任务描述，我会分析目标、规划方法，在关键节点等待你的确认。确认后自动执行、验证、审查全部阶段。
+    </div>
+  </div>
+  <div id="input-area">
+    <textarea id="userInput" placeholder="描述你想做的事情，例如：在workspace中创建一个HelloWorld.java文件…" rows="2"></textarea>
+    <div class="gate-form" id="gateForm">
+      <div id="gateHint"></div>
+      <label>对当前阶段设计的理解 <span class="required">*</span></label>
+      <textarea id="gateUnderstanding" placeholder="请用自己的话复述：当前处于哪个阶段、上游阶段产出了什么设计、关键边界是什么…"></textarea>
+      <label>识别到的风险和授权建议 <span class="required">*</span></label>
+      <textarea id="gateRisk" placeholder="指出当前阶段的主要风险、误解点、需要继续收紧的授权口径…"></textarea>
+      <label>确认项（点击可取消勾选）</label>
+      <div class="chips" id="confirmChips"></div>
+    </div>
+    <div class="btn-row">
+      <span id="status"></span>
+      <button id="submitBtn" class="primary" onclick="submit()">提交任务</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentTaskId = null;
+let currentContext = null;
+const confirmCodes = new Set();
+
+// 阶段名中文映射
+const stageNames = {
+  'GOAL_DEFINITION': '目标定义',
+  'PLANNING': '方法规划',
+  'GATE_CONFIRM': '门禁确认',
+  'EXECUTION': '执行',
+  'VERIFICATION': '验证',
+  'REVIEW': '审查'
+};
+
+// 门禁状态中文映射
+const gateStatusNames = {
+  'PASS': '通过',
+  'BLOCKED': '已阻断',
+  'NEEDS_CLARIFICATION': '需澄清',
+  'NEEDS_CONFIRMATION': '待确认'
+};
+
+function stageLabel(name) { return stageNames[name] || name; }
+
+function addMsg(role, content) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.innerHTML = content;
+  document.getElementById('messages').appendChild(div);
+  document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+}
+
+function setStatus(text) { document.getElementById('status').innerHTML = text; }
+
+function renderTaskList() {
+  const list = document.getElementById('task-list');
+  fetch('/api/tasks')
+    .then(r => r.json())
+    .then(tasks => {
+      list.innerHTML = tasks.map(t => `
+        <div class="item${t.taskId === currentTaskId ? ' active' : ''}" onclick="selectTask('${t.taskId}')">
+          <div class="id">${t.taskId.slice(0,8)}…</div>
+          <div class="desc">${(t.stageNotes||[]).slice(-1).map(n => escapeHtml(n)).join('') || '(无记录)'}</div>
+          <div class="stage">${stageLabel(t.currentStage)} ${t.completed ? '✓' : ''}</div>
+        </div>
+      `).join('');
+    }).catch(() => {});
+}
+
+function newTask() {
+  currentTaskId = null;
+  currentContext = null;
+  confirmCodes.clear();
+  document.getElementById('userInput').value = '';
+  document.getElementById('gateUnderstanding').value = '';
+  document.getElementById('gateRisk').value = '';
+  document.getElementById('gateForm').style.display = 'none';
+  document.getElementById('submitBtn').textContent = '提交任务';
+  document.getElementById('submitBtn').className = 'primary';
+  document.getElementById('submitBtn').disabled = false;
+  setStatus('');
+}
+
+function selectTask(taskId) {
+  currentTaskId = taskId;
+  fetch('/api/tasks/' + taskId)
+    .then(r => r.json())
+    .then(ctx => { currentContext = ctx; updateUI(); renderTaskList(); });
+}
+
+function updateUI() {
+  const gateForm = document.getElementById('gateForm');
+  const submitBtn = document.getElementById('submitBtn');
+  const userInput = document.getElementById('userInput');
+
+  if (!currentContext) { gateForm.style.display = 'none'; return; }
+
+  const pd = currentContext.pendingDecisions || [];
+  const stage = currentContext.currentStage;
+
+  // 门禁确认阶段：有未完成的待确认项时显示门禁表单
+  const hasUnresolvedDecisions = pd.length > 0 && (stage === 'GATE_CONFIRM');
+
+  if (hasUnresolvedDecisions) {
+    gateForm.style.display = 'block';
+    userInput.style.display = 'none';
+    submitBtn.textContent = '提交门禁确认';
+    submitBtn.className = 'primary';
+    submitBtn.disabled = false;
+
+    // 构建引导提示
+    renderGateHint(pd);
+
+    // 渲染确认码芯片（只显示确认类型的）
+    const chips = document.getElementById('confirmChips');
+    const confirmDecisions = pd.filter(d => d.type === 'CONFIRMATION' || !d.type);
+    chips.innerHTML = confirmDecisions.map(d => `
+      <div class="chip" data-code="${d.code}" title="${escapeHtml(d.description || '')}" onclick="toggleChip(this)">${escapeHtml(d.title || d.code)}</div>
+    `).join('');
+    confirmCodes.clear();
+    confirmDecisions.forEach(d => confirmCodes.add(d.code));
+    chips.querySelectorAll('.chip').forEach(c => c.classList.add('selected'));
+
+  } else if (pd.length === 0 && stage === 'REVIEW') {
+    gateForm.style.display = 'none';
+    userInput.style.display = 'block';
+    submitBtn.textContent = '已完成';
+    submitBtn.className = '';
+    submitBtn.disabled = true;
+
+  } else if (pd.length === 0 && stage !== 'REVIEW' && stage !== 'GATE_CONFIRM') {
+    // 中间阶段已完成或中断，显示当前状态
+    gateForm.style.display = 'none';
+    userInput.style.display = 'none';
+    const reason = currentContext.failureReason || '';
+    if (reason) {
+      submitBtn.textContent = '任务中断：' + reason;
+      submitBtn.className = 'danger';
+    } else {
+      submitBtn.textContent = stageLabel(stage) + ' 阶段…';
+      submitBtn.className = '';
+    }
+    submitBtn.disabled = true;
+
+  } else {
+    gateForm.style.display = 'none';
+    userInput.style.display = 'block';
+    submitBtn.textContent = '提交任务';
+    submitBtn.className = 'primary';
+    submitBtn.disabled = false;
+  }
+}
+
+function renderGateHint(pendingDecisions) {
+  const hintDiv = document.getElementById('gateHint');
+  let html = '<strong>系统提示：</strong>门禁阶段需要你确认以下信息后才会继续执行。';
+
+  // 检查是否有需要填写的输入项
+  const inputDecisions = pendingDecisions.filter(d => d.type === 'UNDERSTANDING_INPUT' || d.type === 'RISK_INPUT');
+  if (inputDecisions.length > 0) {
+    html += '<ul>';
+    inputDecisions.forEach(d => {
+      html += '<li><strong>' + escapeHtml(d.title) + '</strong>：' + escapeHtml(d.description) + '</li>';
+    });
+    html += '</ul>';
+  }
+
+  // 列出确认项
+  const confirmDecisions = pendingDecisions.filter(d => d.type === 'CONFIRMATION' || !d.type);
+  if (confirmDecisions.length > 0) {
+    html += '<div style="margin-top:6px;">需确认项（默认已勾选，点击可取消）：</div>';
+  }
+
+  hintDiv.innerHTML = html;
+  hintDiv.className = 'hint';
+}
+
+function toggleChip(el) {
+  const code = el.dataset.code;
+  if (confirmCodes.has(code)) { confirmCodes.delete(code); el.classList.remove('selected'); }
+  else { confirmCodes.add(code); el.classList.add('selected'); }
+}
+
+function submit() {
+  const gateFormVisible = document.getElementById('gateForm').style.display === 'block';
+
+  if (!currentTaskId && !gateFormVisible) {
+    // 第一阶段：提交新任务
+    const desc = document.getElementById('userInput').value.trim();
+    if (!desc) return;
+    addMsg('user', '<div class="label">你</div>' + escapeHtml(desc));
+    setStatus('<span class="loading"></span> 分析中…');
+    document.getElementById('submitBtn').disabled = true;
+
+    fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskDescription: desc })
+    })
+    .then(r => r.json())
+    .then(ctx => {
+      currentTaskId = ctx.taskId;
+      currentContext = ctx;
+      renderTaskResponse(ctx);
+      updateUI();
+      renderTaskList();
+      document.getElementById('submitBtn').disabled = false;
+      setStatus('');
+    })
+    .catch(e => { addMsg('system', '<div class="label">错误</div>' + e.message); setStatus(''); document.getElementById('submitBtn').disabled = false; });
+
+  } else if (currentTaskId && gateFormVisible) {
+    // 第二阶段：提交门禁确认
+    const understanding = document.getElementById('gateUnderstanding').value.trim();
+    const risk = document.getElementById('gateRisk').value.trim();
+
+    // 检查是否有需要填写的输入项
+    const inputDecisions = (currentContext.pendingDecisions || []).filter(
+      d => d.type === 'UNDERSTANDING_INPUT' || d.type === 'RISK_INPUT');
+
+    if (!understanding && inputDecisions.some(d => d.type === 'UNDERSTANDING_INPUT')) {
+      setStatus('请填写"对当前阶段设计的理解"'); return;
+    }
+    if (!risk && inputDecisions.some(d => d.type === 'RISK_INPUT')) {
+      setStatus('请填写"识别到的风险和授权建议"'); return;
+    }
+    if (confirmCodes.size === 0) { setStatus('请至少选择一项确认'); return; }
+
+    addMsg('user', '<div class="label">你 · 门禁确认</div>'
+      + (understanding ? '<strong>理解：</strong>' + escapeHtml(understanding) + '<br>' : '')
+      + (risk ? '<strong>风险：</strong>' + escapeHtml(risk) + '<br>' : '')
+      + '<strong>确认：</strong>' + [...confirmCodes].join(', '));
+    setStatus('<span class="loading"></span> 门禁审查中…');
+    document.getElementById('submitBtn').disabled = true;
+
+    fetch('/api/tasks/' + currentTaskId + '/gate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ understanding, risk, confirmedCodes: [...confirmCodes] })
+    })
+    .then(r => r.json())
+    .then(ctx => {
+      currentContext = ctx;
+      renderTaskResponse(ctx);
+      document.getElementById('gateUnderstanding').value = '';
+      document.getElementById('gateRisk').value = '';
+
+      if (ctx.pendingDecisions && ctx.pendingDecisions.length > 0 && ctx.currentStage === 'GATE_CONFIRM') {
+        // 门禁未通过，显示 LLM 审查发现 + 待补充项
+        let fbHtml = '<div class="label">门禁反馈</div><div class="warning-block">';
+
+        // LLM 审查的具体发现
+        const feedbackItems = ctx.gateReviewFeedback || [];
+        if (feedbackItems.length > 0) {
+          fbHtml += '<strong>LLM 审查发现：</strong><br>';
+          feedbackItems.forEach(f => {
+            fbHtml += '· ' + escapeHtml(f) + '<br>';
+          });
+          fbHtml += '<br>';
+        }
+
+        // 待补充项（含 LLM 的具体追问）
+        fbHtml += '<strong>需要补充：</strong><br>';
+        (ctx.pendingDecisions || []).forEach(d => {
+          fbHtml += '<div style="margin-top:6px;"><strong>' + escapeHtml(d.title) + '</strong>：'
+            + escapeHtml(d.description).replace(/\n/g, '<br>') + '</div>';
+        });
+        fbHtml += '</div>';
+        addMsg('system', fbHtml);
+      }
+
+      updateUI();
+      renderTaskList();
+      document.getElementById('submitBtn').disabled = false;
+      setStatus('');
+    })
+    .catch(e => { addMsg('system', '<div class="label">错误</div>' + e.message); setStatus(''); document.getElementById('submitBtn').disabled = false; });
+  }
+}
+
+function renderTaskResponse(ctx) {
+  const stage = stageLabel(ctx.currentStage);
+  const stageSummary = ctx.stageSummary || '无';
+
+  let html = '<div class="label">yragent · ' + stage + '</div>';
+
+  // 阶段摘要——动态生成，展示上游分析结果
+  if (stageSummary && stageSummary !== '无') {
+    html += '<div class="analysis-block">' + escapeHtml(stageSummary).replace(/\n/g, '<br>') + '</div>';
+  }
+
+  // 门禁审查备注
+  if (ctx.gateReviewNote) {
+    html += '<strong>审查意见：</strong>' + escapeHtml(ctx.gateReviewNote) + '<br>';
+  }
+
+  // 下一步
+  if (ctx.nextAction) {
+    html += '<strong>下一步：</strong>' + escapeHtml(ctx.nextAction) + '<br>';
+  }
+
+  // 失败原因
+  if (ctx.failureReason) {
+    html += '<strong style="color:var(--danger)">失败原因：</strong>' + escapeHtml(ctx.failureReason) + '<br>';
+  }
+
+  // 阶段记录（折叠显示）
+  if (ctx.stageNotes && ctx.stageNotes.length > 0) {
+    html += '<details style="margin-top:6px;"><summary style="cursor:pointer;color:var(--muted);font-size:12px;">阶段记录（' + ctx.stageNotes.length + '条）</summary>';
+    html += '<div style="font-size:11px;color:var(--muted);margin-top:4px;">';
+    ctx.stageNotes.forEach(n => { html += '· ' + escapeHtml(n) + '<br>'; });
+    html += '</div></details>';
+  }
+
+  if (ctx.completed) {
+    html += '<br><strong style="color:var(--success);">✓ 全流程完成</strong>';
+  }
+
+  addMsg('system', html);
+}
+
+function escapeHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+document.getElementById('userInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+});
+
+// 定期刷新任务列表
+setInterval(renderTaskList, 5000);
+renderTaskList();
+</script>
+</body>
+</html>

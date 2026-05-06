@@ -1,0 +1,54 @@
+server:
+  port: 18080
+
+spring:
+  application:
+    name: yragent-core
+  autoconfigure:
+    exclude:
+      # 当前阶段只保留 Spring AI Alibaba 依赖，不启动真实 DashScope 自动装配，避免骨架期被 API Key 阻断。
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeAgentAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeChatAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeEmbeddingAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeImageAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeAudioSpeechAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeAudioTranscriptionAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeRerankAutoConfiguration
+  datasource:
+    url: jdbc:sqlite:./workspace/yragent.db
+    driver-class-name: org.sqlite.JDBC
+
+yragent:
+  # 工作区根目录，所有文件操作限制在此目录下。
+  workspace-root: ./workspace
+  llm:
+    provider: deepseek-compatible
+    # API Key 优先从这里读取；若为空，则回退到环境变量 DEEPSEEK_API_KEY / OPENAI_API_KEY。
+    api-key: ${DEEPSEEK_API_KEY:}
+    # DeepSeek 走 OpenAI 兼容协议，默认基础地址为 https://api.deepseek.com 。
+    base-url: https://api.deepseek.com
+    completions-path: /v1/chat/completions
+    planner-model: deepseek-chat
+    executor-model: deepseek-chat
+  mcp:
+    enabled: true
+    # MCP Server 列表。默认空，按需配置。
+    # 示例：接入文件系统 MCP Server
+    # servers:
+    #   - name: filesystem
+    #     command: npx
+    #     args:
+    #       - -y
+    #       - "@modelcontextprotocol/server-filesystem"
+    #       - ./workspace
+    #     timeout-seconds: 30
+    #   - name: custom
+    #     command: python
+    #     args:
+    #       - ./mcp-servers/my_server.py
+    #     env:
+    #       PYTHONUNBUFFERED: "1"
+    #     timeout-seconds: 60
+    servers: []
+  trace:
+    enabled: true
