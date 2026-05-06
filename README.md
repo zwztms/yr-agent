@@ -49,6 +49,4 @@ Web 界面：`http://localhost:18080`
 | 工作区根目录 | — | `./workspace` |
 | 服务端口 | `SERVER_PORT` | `18080` |
 
-## 许可证
 
-MIT
