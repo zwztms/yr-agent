@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>yragent — 人机共驾</title>
+<style>
+/* ===== CSS Variables (Dark Theme) ===== */
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --accent-dim: #1f6feb33;
+  --danger: #f85149;
+  --success: #3fb950;
+  --warning: #d2991d;
+  --user-bg: #1f6feb22;
+  --user-border: #1f6feb44;
+}
+
+/* ===== Reset & Base ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif,
+        "Microsoft YaHei", "PingFang SC", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+}
+
+/* ===== Sidebar ===== */
+#sidebar {
+  width: 280px;
+  min-width: 280px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  transition: transform 0.3s ease;
+  z-index: 100;
+}
+#sidebar-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+#sidebar-header h2 {
+  font-size: 16px;
+  color: var(--accent);
+  font-weight: 600;
+}
+#sidebar-header .subtitle {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+#task-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+#task-list .empty-list {
+  text-align: center;
+  color: var(--muted);
+  padding: 32px 16px;
+  font-size: 13px;
+}
+.task-item {
+  padding: 10px 12px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+.task-item:hover {
+  background: #1c2129;
+  border-color: var(--border);
+}
+.task-item.active {
+  background: #1c2129;
+  border-color: var(--accent);
+}
+.task-item .task-desc {
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-item .task-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+  font-size: 11px;
+}
+.task-item .task-stage {
+  color: var(--warning);
+}
+.task-item .task-id {
+  color: var(--muted);
+  font-family: monospace;
+  font-size: 10px;
+}
+.task-item.completed .task-stage {
+  color: var(--success);
+}
+#sidebar-footer {
+  padding: 8px;
+  border-top: 1px solid var(--border);
+}
+#sidebar-footer button {
+  width: 100%;
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  transition: background 0.15s, border-color 0.15s;
+}
+#sidebar-footer button:hover {
+  background: #1c2129;
+  border-color: var(--accent);
+}
+
+/* ===== Main Area ===== */
+#main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  position: relative;
+}
+
+/* ===== Menu Toggle (Mobile) ===== */
+#menu-btn {
+  display: none;
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 90;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 18px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+#sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 99;
+}
+#sidebar-overlay.open { display: block; }
+
+/* ===== Messages (Chat) ===== */
+#messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 20px 16px;
+  scroll-behavior: smooth;
+}
+.msg {
+  margin-bottom: 16px;
+  max-width: 85%;
+  animation: fadeIn 0.25s ease;
+}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.msg.system {
+  margin-right: auto;
+}
+.msg.user {
+  margin-left: auto;
+}
+.msg-label {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.msg.system .msg-label { padding-left: 2px; }
+.msg.user .msg-label { text-align: right; padding-right: 2px; }
+.msg-body {
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.msg.system .msg-body {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.msg.user .msg-body {
+  background: var(--user-bg);
+  border: 1px solid var(--user-border);
+}
+
+/* ===== System Content Blocks ===== */
+.system-heading {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.stage-indicator {
+  font-size: 12px;
+  color: var(--warning);
+  margin-bottom: 10px;
+  padding: 4px 10px;
+  background: #d2991d11;
+  border-radius: 4px;
+  display: inline-block;
+}
+.round-info {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.stage-summary {
+  background: #0d1117;
+  padding: 12px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 10px;
+}
+.pending-items {
+  margin-top: 8px;
+}
+.pending-item {
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  background: #0d1117;
+  border-radius: 6px;
+  border-left: 3px solid var(--accent);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.pending-item .item-label {
+  font-size: 11px;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 2px;
+}
+.feedback-text {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  background: #d2991d11;
+  border: 1px solid #d2991d22;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.feedback-text p { margin-bottom: 6px; }
+.feedback-text p:last-child { margin-bottom: 0; }
+.review-note {
+  font-size: 12px;
+  color: var(--warning);
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: #d2991d11;
+  border-radius: 4px;
+}
+.next-action {
+  font-size: 12px;
+  color: var(--accent);
+  margin-top: 8px;
+}
+.failure-reason {
+  font-size: 12px;
+  color: var(--warning);
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #d2991d11;
+  border-radius: 6px;
+  border-left: 3px solid var(--warning);
+}
+.completion-heading {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--success);
+  margin-bottom: 12px;
+}
+.stage-notes-details {
+  margin-top: 12px;
+  font-size: 12px;
+}
+.stage-notes-details summary {
+  cursor: pointer;
+  color: var(--muted);
+  padding: 4px 0;
+  user-select: none;
+}
+.stage-notes-details summary:hover { color: var(--text); }
+.stage-notes-content {
+  margin-top: 6px;
+  padding: 8px 12px;
+  background: #0d1117;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.note-item { margin-bottom: 2px; }
+
+/* ===== Input Area ===== */
+#input-area {
+  border-top: 1px solid var(--border);
+  padding: 12px 20px 16px;
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+#input-area textarea {
+  flex: 1;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  min-height: 44px;
+  max-height: 160px;
+  transition: border-color 0.15s;
+}
+#input-area textarea:focus {
+  border-color: var(--accent);
+}
+#input-area textarea::placeholder {
+  color: var(--muted);
+}
+#input-area textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+#send-btn {
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  white-space: nowrap;
+  transition: opacity 0.15s, transform 0.1s;
+  flex-shrink: 0;
+}
+#send-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+#send-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+#send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+#status-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  min-height: 20px;
+}
+
+/* ===== Loading Spinner ===== */
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--muted);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  #sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    transform: translateX(-100%);
+  }
+  #sidebar.open {
+    transform: translateX(0);
+  }
+  #menu-btn { display: flex; }
+  #main { padding-top: 0; }
+  #messages { padding: 20px 12px 12px; }
+  #input-area { padding: 10px 12px 14px; }
+  .msg { max-width: 92%; }
+}
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- ===== Sidebar Overlay (Mobile) ===== -->
+<div id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+<!-- ===== Menu Button (Mobile) ===== -->
+<button id="menu-btn" onclick="toggleSidebar()" title="任务列表">&#9776;</button>
+
+<!-- ===== Sidebar ===== -->
+<div id="sidebar">
+  <div id="sidebar-header">
+    <h2>yragent</h2>
+    <div class="subtitle">人机共驾</div>
+  </div>
+  <div id="task-list">
+    <div class="empty-list">暂无任务</div>
+  </div>
+  <div id="sidebar-footer">
+    <button onclick="newTask()">+ 新建任务</button>
+  </div>
+</div>
+
+<!-- ===== Main Chat Area ===== -->
+<div id="main">
+  <div id="messages">
+    <div class="msg system">
+      <div class="msg-label">系统</div>
+      <div class="msg-body">
+        <div class="system-heading">欢迎</div>
+        <div class="stage-summary">你好，我是人机共驾开发助手。请描述你想完成的任务，我会分析目标、规划方法，并在关键节点与你确认。</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="input-area">
+    <div class="input-row">
+      <textarea id="userInput"
+        placeholder="描述你想完成的任务，例如：在 workspace 中创建一个 Spring Boot 项目…"
+        rows="1"
+        oninput="autoResize(this)"></textarea>
+      <button id="send-btn" onclick="submit()">发送</button>
+    </div>
+    <div id="status-area"></div>
+  </div>
+</div>
+
+<script>
+/* ================================================================
+   yragent Frontend v2 — Conversational Interface (Chinese Only)
+   ================================================================ */
+
+// ---- State ----
+let currentTaskId = null;
+let currentContext = null;
+let isLoading = false;
+
+// ---- Stage Name Mapping (all Chinese, no codes) ----
+const stageNames = {
+  'GOAL_DEFINITION': '目标分析',
+  'CLARIFY_GOAL':    '目标澄清',
+  'PLANNING':        '方法规划',
+  'GATE_CONFIRM':    '门禁确认',
+  'EXECUTION':       '执行',
+  'VERIFICATION':    '验证结果',
+  'REVIEW':          '审查汇总'
+};
+
+function stageLabel(name) {
+  return stageNames[name] || name || '未知阶段';
+}
+
+// ---- XSS Prevention ----
+function escapeHtml(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ---- Message Rendering ----
+function addMessage(role, content) {
+  const messagesDiv = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+
+  const label = role === 'user' ? '你' : '系统';
+  const bodyContent = role === 'user' ? escapeHtml(content) : content;
+
+  div.innerHTML =
+    '<div class="msg-label">' + label + '</div>' +
+    '<div class="msg-body">' + bodyContent + '</div>';
+
+  messagesDiv.appendChild(div);
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+// ---- Status & Loading ----
+function setStatus(html) {
+  document.getElementById('status-area').innerHTML = html || '';
+}
+
+function setLoading(loading) {
+  isLoading = loading;
+  const input = document.getElementById('userInput');
+  const btn = document.getElementById('send-btn');
+  input.disabled = loading;
+  btn.disabled = loading;
+  if (loading) {
+    setStatus('<span class="spinner"></span> 处理中…');
+  } else {
+    updateInputState();
+  }
+}
+
+// ---- Input State ----
+function updateInputState() {
+  if (isLoading) return;
+
+  const input = document.getElementById('userInput');
+  const btn = document.getElementById('send-btn');
+  const ctx = currentContext;
+
+  if (!ctx) {
+    // No active task — ready for new task description
+    input.disabled = false;
+    input.placeholder = '描述你想完成的任务，例如：在 workspace 中创建一个 Spring Boot 项目…';
+    btn.disabled = false;
+    btn.textContent = '发送';
+    setStatus('');
+    return;
+  }
+
+  if (ctx.completed) {
+    input.disabled = false;
+    input.placeholder = '任务已完成，输入描述可创建新任务…';
+    btn.disabled = false;
+    btn.textContent = '发送';
+    setStatus('全流程完成');
+    return;
+  }
+
+  const pd = ctx.pendingDecisions || [];
+  const stage = ctx.currentStage;
+  const needsInput = pd.length > 0 &&
+    (stage === 'GATE_CONFIRM' || stage === 'CLARIFY_GOAL');
+
+  if (needsInput) {
+    input.disabled = false;
+    input.placeholder = '请在此回复系统的问题…';
+    btn.disabled = false;
+    btn.textContent = '发送';
+    setStatus('等待回复 — ' + stageLabel(stage));
+  } else {
+    // System is processing or in a stage that doesn't require input
+    input.disabled = false;
+    input.placeholder = '系统处理中，如需干预请在此输入…';
+    btn.disabled = false;
+    btn.textContent = '发送';
+    setStatus(stageLabel(stage) + ' 进行中…');
+  }
+}
+
+// ---- Chat Management ----
+function clearChat() {
+  document.getElementById('messages').innerHTML = '';
+}
+
+function showWelcome() {
+  addMessage('system',
+    '<div class="system-heading">欢迎</div>' +
+    '<div class="stage-summary">你好，我是人机共驾开发助手。请描述你想完成的任务，我会分析目标、规划方法，并在关键节点与你确认。</div>'
+  );
+}
+
+function addSystemPrompt(ctx) {
+  const html = renderSystemPrompt(ctx);
+  addMessage('system', html);
+}
+
+// ================================================================
+//  Core State Machine — renderSystemPrompt
+// ================================================================
+function renderSystemPrompt(ctx) {
+  if (!ctx) return '';
+
+  const stage = ctx.currentStage;
+  const pd = ctx.pendingDecisions || [];
+
+  if (stage === 'GATE_CONFIRM' && pd.length > 0) {
+    return buildGatePrompt(ctx);
+  }
+  if (stage === 'CLARIFY_GOAL' && pd.length > 0) {
+    return buildClarificationPrompt(ctx);
+  }
+  if (ctx.completed) {
+    return buildCompletionSummary(ctx);
+  }
+  return buildProgressSummary(ctx);
+}
+
+// ---- buildGatePrompt — gate as natural language guidance ----
+function buildGatePrompt(ctx) {
+  const pd = ctx.pendingDecisions || [];
+  let html = '';
+
+  // Gate review feedback (LLM's findings)
+  const feedback = ctx.gateReviewFeedback || [];
+  if (feedback.length > 0) {
+    html += '<div class="feedback-text">';
+    feedback.forEach(function(f) {
+      html += '<p>' + escapeHtml(f) + '</p>';
+    });
+    html += '</div>';
+  }
+
+  // Heading
+  html += '<div class="system-heading">还需要以下信息</div>';
+
+  // Pending items rendered as natural language questions
+  html += '<div class="pending-items">';
+  pd.forEach(function(d) {
+    var type = d.type || '';
+    var title = d.title || d.code || '';
+    var desc = d.description || '';
+
+    if (type === 'UNDERSTANDING_INPUT') {
+      html += '<div class="pending-item">';
+      html += '<span class="item-label">请说明你的理解</span>';
+      html += '<strong>' + escapeHtml(title) + '</strong>';
+      if (desc) html += '：' + escapeHtml(desc);
+      html += '</div>';
+    } else if (type === 'RISK_INPUT') {
+      html += '<div class="pending-item">';
+      html += '<span class="item-label">请指出风险点</span>';
+      html += '<strong>' + escapeHtml(title) + '</strong>';
+      if (desc) html += '：' + escapeHtml(desc);
+      html += '</div>';
+    } else {
+      // CONFIRMATION or unknown type
+      html += '<div class="pending-item">';
+      html += '<span class="item-label">请确认</span>';
+      html += '<strong>' + escapeHtml(title) + '</strong>';
+      if (desc) html += ' — ' + escapeHtml(desc);
+      html += '</div>';
+    }
+  });
+  html += '</div>';
+
+  // Gate review note
+  if (ctx.gateReviewNote) {
+    html += '<div class="review-note">审查备注：' + escapeHtml(ctx.gateReviewNote) + '</div>';
+  }
+
+  return html;
+}
+
+// ---- buildClarificationPrompt — clarification questions ----
+function buildClarificationPrompt(ctx) {
+  const pd = ctx.pendingDecisions || [];
+  let html = '';
+
+  html += '<div class="system-heading">请确认以下问题</div>';
+  html += '<div class="pending-items">';
+
+  pd.forEach(function(d) {
+    var title = d.title || d.code || '';
+    var desc = d.description || '';
+    html += '<div class="pending-item">';
+    html += '· <strong>' + escapeHtml(title) + '</strong>';
+    if (desc) html += '：' + escapeHtml(desc);
+    html += '</div>';
+  });
+
+  html += '</div>';
+  return html;
+}
+
+// ---- buildProgressSummary — progress when no user action needed ----
+function buildProgressSummary(ctx) {
+  let html = '';
+
+  // Stage indicator
+  html += '<div class="stage-indicator">当前阶段：' + stageLabel(ctx.currentStage) + '</div>';
+
+  // Round number (multi-round awareness)
+  if (ctx.roundNumber != null && ctx.roundNumber !== undefined) {
+    html += '<div class="round-info">第 ' + ctx.roundNumber + ' 轮</div>';
+  }
+
+  // Stage summary
+  if (ctx.stageSummary && ctx.stageSummary !== '无') {
+    html += '<div class="stage-summary">' +
+      escapeHtml(ctx.stageSummary).replace(/\n/g, '<br>') +
+      '</div>';
+  }
+
+  // Gate review note
+  if (ctx.gateReviewNote) {
+    html += '<div class="review-note">审查意见：' + escapeHtml(ctx.gateReviewNote) + '</div>';
+  }
+
+  // Next action
+  if (ctx.nextAction) {
+    html += '<div class="next-action">下一步：' + escapeHtml(ctx.nextAction) + '</div>';
+  }
+
+  // Failure reason (shown as warning, not error)
+  if (ctx.failureReason) {
+    html += '<div class="failure-reason">' + escapeHtml(ctx.failureReason) + '</div>';
+  }
+
+  // Stage notes — collapsed by default
+  if (ctx.stageNotes && ctx.stageNotes.length > 0) {
+    html += '<details class="stage-notes-details">';
+    html += '<summary>阶段记录（' + ctx.stageNotes.length + '条）</summary>';
+    html += '<div class="stage-notes-content">';
+    ctx.stageNotes.forEach(function(n) {
+      html += '<div class="note-item">· ' + escapeHtml(n) + '</div>';
+    });
+    html += '</div></details>';
+  }
+
+  return html;
+}
+
+// ---- buildCompletionSummary — final completion view ----
+function buildCompletionSummary(ctx) {
+  let html = '';
+
+  html += '<div class="completion-heading">全流程完成</div>';
+
+  // Final summary
+  if (ctx.stageSummary && ctx.stageSummary !== '无') {
+    html += '<div class="stage-summary">' +
+      escapeHtml(ctx.stageSummary).replace(/\n/g, '<br>') +
+      '</div>';
+  }
+
+  // Gate review note
+  if (ctx.gateReviewNote) {
+    html += '<div class="review-note">最终审查：' + escapeHtml(ctx.gateReviewNote) + '</div>';
+  }
+
+  // Full stage notes
+  if (ctx.stageNotes && ctx.stageNotes.length > 0) {
+    html += '<details class="stage-notes-details">';
+    html += '<summary>完整记录（' + ctx.stageNotes.length + '条）</summary>';
+    html += '<div class="stage-notes-content">';
+    ctx.stageNotes.forEach(function(n) {
+      html += '<div class="note-item">· ' + escapeHtml(n) + '</div>';
+    });
+    html += '</div></details>';
+  }
+
+  return html;
+}
+
+// ================================================================
+//  Task List (Sidebar)
+// ================================================================
+function renderTaskList() {
+  fetch('/api/tasks')
+    .then(function(r) { return r.json(); })
+    .then(function(tasks) {
+      var list = document.getElementById('task-list');
+      if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
+        list.innerHTML = '<div class="empty-list">暂无任务</div>';
+        return;
+      }
+      list.innerHTML = tasks.map(function(t) {
+        var activeClass = t.taskId === currentTaskId ? ' active' : '';
+        var completedClass = t.completed ? ' completed' : '';
+
+        // Brief description: use first stage note or fallback
+        var notes = t.stageNotes || [];
+        var desc = notes.length > 0
+          ? notes[notes.length - 1]
+          : (t.taskDescription || '新任务');
+        // Truncate long descriptions
+        if (desc.length > 28) desc = desc.slice(0, 28) + '…';
+
+        var shortId = (t.taskId || '').slice(0, 8);
+
+        return '<div class="task-item' + activeClass + completedClass +
+          '" onclick="selectTask(\'' + t.taskId + '\')">' +
+          '<div class="task-desc">' + escapeHtml(desc) + '</div>' +
+          '<div class="task-meta">' +
+            '<span class="task-stage">' + stageLabel(t.currentStage) +
+              (t.completed ? ' ✓' : '') + '</span>' +
+            '<span class="task-id">' + escapeHtml(shortId) + '…</span>' +
+          '</div>' +
+          '</div>';
+      }).join('');
+    })
+    .catch(function() {
+      // Silently ignore — task list is refreshed periodically
+    });
+}
+
+// ================================================================
+//  Actions: newTask, selectTask, submit
+// ================================================================
+
+// ---- newTask — reset to fresh state ----
+function newTask() {
+  currentTaskId = null;
+  currentContext = null;
+
+  var input = document.getElementById('userInput');
+  input.value = '';
+  input.style.height = 'auto';
+
+  clearChat();
+  showWelcome();
+
+  updateInputState();
+  renderTaskList();
+
+  // Close mobile sidebar
+  closeSidebar();
+
+  input.focus();
+}
+
+// ---- selectTask — load existing task ----
+function selectTask(taskId) {
+  if (isLoading) return;
+  if (taskId === currentTaskId) return;
+
+  setLoading(true);
+  currentTaskId = taskId;
+  clearChat();
+
+  fetch('/api/tasks/' + taskId)
+    .then(function(r) { return r.json(); })
+    .then(function(ctx) {
+      currentContext = ctx;
+      // Show task identification
+      var shortId = (taskId || '').slice(0, 8);
+      addMessage('system',
+        '<div class="stage-indicator">已切换到任务 ' + escapeHtml(shortId) + '…</div>'
+      );
+      // Show current state via state machine
+      addSystemPrompt(ctx);
+      updateInputState();
+      renderTaskList();
+      closeSidebar();
+    })
+    .catch(function() {
+      addMessage('system',
+        '<div class="failure-reason">无法加载任务，请刷新页面后重试。</div>'
+      );
+      currentTaskId = null;
+      currentContext = null;
+      updateInputState();
+      renderTaskList();
+    })
+    .finally(function() {
+      setLoading(false);
+    });
+}
+
+// ---- submit — unified handler (task create or gate confirm) ----
+function submit() {
+  if (isLoading) return;
+
+  var input = document.getElementById('userInput');
+  var text = input.value.trim();
+  if (!text) return;
+
+  // Determine if this is a new task or a gate response
+  var needsResponse = currentTaskId && currentContext &&
+    !currentContext.completed &&
+    (currentContext.pendingDecisions && currentContext.pendingDecisions.length > 0) &&
+    (currentContext.currentStage === 'GATE_CONFIRM' ||
+     currentContext.currentStage === 'CLARIFY_GOAL');
+
+  // Add user message to chat
+  addMessage('user', text);
+
+  // Clear input
+  input.value = '';
+  input.style.height = 'auto';
+
+  setLoading(true);
+
+  if (!needsResponse) {
+    // ---- Create new task ----
+    // Reset previous task context
+    if (currentTaskId) {
+      currentTaskId = null;
+      currentContext = null;
+    }
+
+    fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskDescription: text })
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(ctx) {
+        currentTaskId = ctx.taskId;
+        currentContext = ctx;
+        addSystemPrompt(ctx);
+        updateInputState();
+        renderTaskList();
+      })
+      .catch(function() {
+        addMessage('system',
+          '<div class="failure-reason">系统处理中，请稍候重试。</div>'
+        );
+      })
+      .finally(function() {
+        setLoading(false);
+      });
+
+  } else {
+    // ---- Submit gate / clarification response ----
+    fetch('/api/tasks/' + currentTaskId + '/gate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ freeResponse: text })
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(ctx) {
+        currentContext = ctx;
+        addSystemPrompt(ctx);
+        updateInputState();
+        renderTaskList();
+      })
+      .catch(function() {
+        addMessage('system',
+          '<div class="failure-reason">系统处理中，请稍候重试。</div>'
+        );
+      })
+      .finally(function() {
+        setLoading(false);
+      });
+  }
+}
+
+// ================================================================
+//  Helpers
+// ================================================================
+
+// Auto-resize textarea as user types
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+}
+
+// Mobile sidebar toggle
+function toggleSidebar() {
+  var sidebar = document.getElementById('sidebar');
+  var overlay = document.getElementById('sidebar-overlay');
+  var isOpen = sidebar.classList.contains('open');
+  if (isOpen) {
+    closeSidebar();
+  } else {
+    sidebar.classList.add('open');
+    overlay.classList.add('open');
+  }
+}
+
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+}
+
+// ================================================================
+//  Event Listeners
+// ================================================================
+
+// Enter to send, Shift+Enter for newline
+document.getElementById('userInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    submit();
+  }
+});
+
+// Click outside sidebar to close on mobile
+document.getElementById('sidebar-overlay').addEventListener('click', closeSidebar);
+
+// Close sidebar on Escape key
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeSidebar();
+});
+
+// ================================================================
+//  Initialization
+// ================================================================
+
+// Periodic task list refresh
+setInterval(renderTaskList, 5000);
+
+// Initial load
+renderTaskList();
+document.getElementById('userInput').focus();
+</script>
+</body>
+</html>

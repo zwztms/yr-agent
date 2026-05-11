@@ -1,20 +1,33 @@
 # Maven
 target/
-
-# Runtime workspace
-workspace/
+*.jar
+*.war
 
 # IDE
 .idea/
 *.iml
+.vscode/
+.settings/
+.project
+.classpath
 
 # OS
 .DS_Store
 Thumbs.db
 
+# Workspace (runtime data)
+workspace/
+*.db
+*.db-journal
+
+# Logs
+*.log
+logs/
+
 # Environment
 .env
 .env.local
 
-# Logs
-*.log
+# Python
+__pycache__/
+*.pyc

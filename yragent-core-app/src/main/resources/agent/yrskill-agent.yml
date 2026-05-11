@@ -1,0 +1,172 @@
+# yrskill Agent 配置 v2
+# 定义 yragent 人机共驾智能体的完整运行时配置
+# 与 WorkflowEngine (com.yragent.workflow.WorkflowEngine) 集成
+
+yragent:
+  agent:
+    config:
+      app-name: yrskill
+      version: "2.0"
+
+      # LLM 配置
+      chat-model:
+        model: deepseek-chat
+        base-url: https://api.deepseek.com
+        completions-path: /v1/chat/completions
+
+      # 工作区配置
+      workspace:
+        root: E:/xiangmu
+        deny-absolute-paths: true
+        deny-path-traversal: true
+
+      # 多轮循环配置
+      loop:
+        max-rounds: 10
+        stop-on-complete: true
+        default-mode: auto  # interactive | auto | learn
+
+      # 门禁配置
+      gate:
+        max-attempts-per-round: 3    # 单轮最多门禁重试次数
+        llm-driven: true             # true=LLM全权裁决, false=兼容旧规则层
+        fallback-on-llm-failure: true # LLM失败时降级为基础规则
+
+      # 工具风险策略
+      tool-policy:
+        read-only: auto-allow         # READ_ONLY 自动放行
+        mutating: gate-confirm        # MUTATING 需门禁确认
+        dangerous: manual-approve     # DANGEROUS 需手动审批
+
+      # 本地工具
+      tool-mcp-list:
+        - local:
+            name: local-file-tools
+            description: 本地文件读写、目录列举、命令执行工具
+
+      # Skill 加载
+      tool-skills-list:
+        - type: resource
+          path: agent/skills
+
+      # 注册使用的 Skill
+      skill-registry:
+        - name: yrskill
+          riskLevel: MUTATING
+          requiredTools: [read_file, write_file, list_dir, run_command]
+
+      # ==================== 智能体定义 ====================
+      agents:
+        # 阶段1: 目标分析
+        - name: goal-analyst
+          description: 分析用户需求，识别任务类型、目标、约束、缺失信息
+          instruction: |
+            你是目标分析专家。分析用户输入并产出 GoalAnalysis JSON。
+            识别任务类型（new_project/bug_fix/refactor/config_change/inquiry）、
+            提取明确和隐含目标、列出约束条件、识别缺失信息。
+            如果是纯问答类（inquiry），直接回答，不进入后续阶段。
+            标注置信度（high/medium/low），低置信度时 needsClarification=true。
+          output-key: goal_analysis
+
+        # 阶段2: 目标澄清（v2 新增）
+        - name: goal-clarifier
+          description: 就模糊点生成具体问题，等待开发者澄清后修正目标
+          instruction: |
+            你是需求澄清专家。根据 {goal_analysis} 中 missingInfo 和 confidence 判断：
+            - 如果置信度为 high 且无缺失信息：跳过澄清，直接输出 NO_QUESTIONS
+            - 否则：生成 2-4 个具体问题向开发者确认
+            问题要求：具体可操作、附带选择影响说明、提供可选答案并标记推荐项。
+          output-key: goal_clarification
+
+        # 阶段3: 详细规划（v2 增强）
+        - name: project-planner
+          description: 根据目标分析生成详细计划书（PlanDocument）
+          instruction: |
+            你是项目规划专家。根据 {goal_analysis} 和 {goal_clarification} 生成 PlanDocument。
+            必须包含：具体文件路径树、每步使用的工具和风险等级、预估总轮数。
+            如果是多轮项目，只规划当前轮的工作，后续轮次留到 REVIEW 后再规划。
+          output-key: plan_document
+
+        # 阶段4: 门禁裁决（v2 LLM 全权）
+        - name: gate-reviewer
+          description: LLM 门禁裁决者 — 判断开发者是否理解当前计划
+          instruction: |
+            你是门禁裁决者。评估开发者对 {plan_document} 的理解程度。
+            裁决为 PASS（放行）/ NEEDS_INFO（追问）/ BLOCKED（拒绝）。
+            核心标准：开发者是否真正理解将发生什么，不是是否使用特定词汇。
+            追问必须具体可操作，禁止"请补充理解"类泛泛追问。
+            空输入或敷衍输入必须 BLOCKED。
+          output-key: gate_result
+
+        # 阶段5: 逐步执行
+        - name: step-executor
+          description: 按计划逐步执行，记录每步结果
+          instruction: |
+            你是执行引擎。严格按照 {plan_document}.steps 逐步执行。
+            每个 write_file 必须包含完整的 content 参数。
+            执行失败不阻断流水线，记录失败原因后继续。
+            连续3步失败则暂停询问开发者。
+          output-key: execution_result
+
+        # 阶段6: 验证结果
+        - name: result-verifier
+          description: 验证每一步产出是否符合预期
+          instruction: |
+            你是质量验证员。根据 {execution_result} 逐一验证：
+            文件是否存在、内容是否完整、构建/测试是否通过。
+            区分"预期内的部分完成"和"异常失败"。
+          output-key: verification_result
+
+        # 阶段7: 审查 + 循环判断
+        - name: round-reviewer
+          description: 汇总本轮执行，判断项目是否完成
+          instruction: |
+            你是项目审查官。汇总本轮整体情况：
+            1. 对比 {plan_document} 目标，评估完成度（百分比）
+            2. 判断 projectComplete：true/false
+            3. 如果未完成：列出下一轮具体重点和 recommendedNextRoundSteps
+            4. 如果连续3轮进度低于30%：建议 shouldAdjustStrategy=true
+          output-key: review_result
+
+      # ==================== 工作流定义 ====================
+      agent-workflows:
+        # 主流水线：七阶段串行
+        - type: sequential
+          name: main-pipeline
+          description: yrskill 主流水线 — 目标分析→澄清→规划→门禁→执行→验证→审查
+          sub-agents:
+            - goal-analyst
+            - goal-clarifier
+            - project-planner
+            - gate-reviewer
+            - step-executor
+            - result-verifier
+            - round-reviewer
+
+        # 开发循环：规划到审查循环执行
+        - type: loop
+          name: dev-loop
+          description: 开发循环 — PLANNING → GATE → EXECUTION → VERIFICATION → REVIEW
+          max-iterations: 10
+          sub-agents:
+            - project-planner
+            - gate-reviewer
+            - step-executor
+            - result-verifier
+            - round-reviewer
+
+        # 快速模式：跳过澄清，门禁一次确认
+        - type: sequential
+          name: quick-pipeline
+          description: 快速流水线 — 适用于简单明确的任务
+          sub-agents:
+            - goal-analyst
+            - project-planner
+            - gate-reviewer
+            - step-executor
+            - result-verifier
+            - round-reviewer
+
+      # 入口
+      runner:
+        agent-name: main-pipeline
