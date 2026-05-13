@@ -1,6 +1,6 @@
 package com.yragent.domain.gate;
 
-import com.yragent.domain.gate.step.GateSemanticReviewStep;
+import com.yragent.domain.gate.step.CoverageReviewStep;
 import com.yragent.domain.goal.GoalAnalysis;
 import com.yragent.domain.memory.GateReviewAttemptSerializer;
 import com.yragent.domain.memory.MemoryService;
@@ -40,7 +40,13 @@ class StageGateEngineTest {
 
     @Test
     void shouldPassWhenAllRequiredDecisionsAreConfirmed() {
-        StageGateEngine stageGateEngine = createEngine(new UnsupportedLlmClient());
+        StageGateEngine stageGateEngine = createEngine(new FixedResponseLlmClient("""
+                [
+                  {"itemId":"PL-1","status":"covered","evidence":"用户复述了计划内容","suggestion":""},
+                  {"itemId":"PL-2","status":"covered","evidence":"用户确认工具选择","suggestion":""},
+                  {"itemId":"PL-3","status":"covered","evidence":"用户识别了风险","suggestion":""}
+                ]
+                """));
         TaskExecutionContext context = new TaskExecutionContext();
         context.setGoalAnalysis(new GoalAnalysis("file_operation", List.of("create file"), List.of("limit workspace"), List.of("file created successfully"),
                 List.of(), "medium", false));
@@ -64,19 +70,16 @@ class StageGateEngineTest {
     }
 
     @Test
-    void shouldRequireClarificationWhenSemanticReviewFindsMisunderstanding() {
+    void shouldRequireClarificationWhenChecklistNotFullyCovered() {
         StageGateEngine stageGateEngine = createEngine(new FixedResponseLlmClient("""
-                {
-                  "gateStatus": "NEEDS_INFO",
-                  "reason": "developer missed tool scope coverage",
-                  "developerSummary": "developer understood the goal but not the tools",
-                  "missingInfo": ["tool scope"],
-                  "questions": ["please explain why the gate stage is still blocked"],
-                  "risksIdentified": [],
-                  "risksMissed": ["no mention of manual takeover conditions"]
-                }
+                [
+                  {"itemId":"PL-1","status":"covered","evidence":"用户描述了方案","suggestion":""},
+                  {"itemId":"PL-2","status":"partial","evidence":"用户提到工具","suggestion":"请说明为什么选择这个工具"},
+                  {"itemId":"PL-3","status":"missing","evidence":"用户未提及风险","suggestion":"你认为最大的风险是什么？"}
+                ]
                 """));
         TaskExecutionContext context = new TaskExecutionContext();
+        context.setCurrentStage(com.yragent.domain.stage.StageType.PLANNING);
         context.setGoalAnalysis(new GoalAnalysis("file_operation", List.of("create file"), List.of("limit workspace"), List.of("file created successfully"),
                 List.of(), "medium", false));
         context.setPlanDocument(new PlanDocument("create file task", "single file approach",
@@ -94,8 +97,7 @@ class StageGateEngineTest {
 
         assertEquals(GateStatus.NEEDS_CLARIFICATION, result.getGateStatus());
         assertFalse(result.isPassed());
-        assertTrue(result.getPendingDecisions().stream()
-                .anyMatch(decision -> decision.getType() == PendingDecisionType.UNDERSTANDING_INPUT));
+        assertTrue(result.getPendingDecisions().size() >= 1);
     }
 
     @Test
@@ -114,8 +116,7 @@ class StageGateEngineTest {
         GateReviewAttempt attempt = context.getGateReviewAttempts().get(0);
         assertEquals(1, attempt.getAttemptIndex());
         assertNotNull(attempt.getTimestamp());
-        // V2: no rule result in gate review attempt
-        assertNotNull(attempt.getSemanticResult());
+        // V2.1: checklist-based gate, semanticResult is null (replaced by checklist scores)
     }
 
     @Test
@@ -184,7 +185,7 @@ class StageGateEngineTest {
 
     private StageGateEngine createEngine(LlmClient llmClient) {
         return new StageGateEngine(
-                new GateSemanticReviewStep(llmClient),
+                new CoverageReviewStep(llmClient),
                 memoryService,
                 attemptSerializer
         );

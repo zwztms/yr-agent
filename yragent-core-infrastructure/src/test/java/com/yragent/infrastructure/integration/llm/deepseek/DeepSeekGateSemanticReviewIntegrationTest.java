@@ -1,55 +1,36 @@
 package com.yragent.infrastructure.integration.llm.deepseek;
 
-import com.yragent.domain.gate.DeveloperUnderstanding;
-import com.yragent.domain.gate.GateSemanticReviewResult;
-import com.yragent.domain.goal.GoalAnalysis;
-import com.yragent.domain.gate.step.GateSemanticReviewStep;
-import com.yragent.domain.planning.PlanDocument;
+import com.yragent.domain.gate.checklist.GateCheckItem;
+import com.yragent.domain.gate.checklist.ItemCoverage;
+import com.yragent.domain.gate.checklist.StageChecklistRegistry;
+import com.yragent.domain.gate.step.CoverageReviewStep;
 import com.yragent.domain.stage.StageType;
-import com.yragent.domain.stage.TaskExecutionContext;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class DeepSeekGateSemanticReviewIntegrationTest {
 
     @Test
-    void shouldCallRealDeepSeekAndParseSemanticReviewResult() {
+    void shouldCallRealDeepSeekAndScoreChecklist() {
         assumeTrue(hasDeepSeekApiKey(), "Missing DEEPSEEK_API_KEY for DeepSeek integration test");
 
         DeepSeekCompatibleLlmClient llmClient = new DeepSeekCompatibleLlmClient(
-                "https://api.deepseek.com",
-                "deepseek-chat",
-                "",
-                "/v1/chat/completions"
-        );
-        GateSemanticReviewStep step = new GateSemanticReviewStep(llmClient);
+                "https://api.deepseek.com", "deepseek-chat", "", "/v1/chat/completions");
+        CoverageReviewStep step = new CoverageReviewStep(llmClient);
 
-        TaskExecutionContext context = new TaskExecutionContext();
-        context.setTaskId(UUID.randomUUID().toString());
-        context.setCurrentStage(StageType.GATE_CONFIRM);
-        context.setGoalAnalysis(new GoalAnalysis("file_operation", List.of("create file"), List.of("limit workspace"), List.of("file created successfully"),
-                List.of(), "medium", false));
-        context.setPlanDocument(new PlanDocument("create file task", "single file approach",
-                List.of("README.md"), List.of(new PlanDocument.PlanStep(1, "create file", "write_file", "create README.md", List.of("README.md"))),
-                List.of("file overwrite risk"), "low"));
-        context.addStageNote("GOAL_DEFINITION: goal defined with memory-snapshot-for-GOAL_DEFINITION");
-        context.addStageNote("PLANNING: planning skeleton generated, tools=3");
-        context.setDeveloperUnderstanding(new DeveloperUnderstanding(
-                "The task goal is defined, the planning stage selected a candidate tool range, and the process is still blocked at the gate stage pending developer confirmation before execution.",
-                "The main risk is overly broad tool authorization, so the authorization should stay tightened and human takeover should remain available."
-        ));
+        List<GateCheckItem> items = StageChecklistRegistry.forStage(StageType.PLANNING);
+        List<ItemCoverage> result = step.review(items,
+                "我会用write_file工具创建HelloWorld.java文件，主要风险是文件可能已存在需要处理",
+                StageType.PLANNING, "文件操作任务", "创建HelloWorld.java文件");
 
-        // V2: review() takes only TaskExecutionContext
-        GateSemanticReviewResult result = step.review(context);
-
-        assertTrue(result.isReviewApplied());
-        assertFalse(result.isFallbackToRuleOnly());
+        assertFalse(result.isEmpty());
+        assertTrue(result.size() >= 3);
+        // at least one item should be covered
+        assertTrue(result.stream().anyMatch(ItemCoverage::isCovered));
     }
 
     private boolean hasDeepSeekApiKey() {
