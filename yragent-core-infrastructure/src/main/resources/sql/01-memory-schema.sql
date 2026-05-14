@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS memory_fragment (
     updated_at  TEXT NOT NULL,              -- 最后更新时间
     task_id     TEXT DEFAULT NULL,          -- 关联任务 ID（可为空，偏好/策略类记忆不关联任务）
     stage       TEXT DEFAULT NULL,          -- 关联阶段类型（可为空），如 GATE_CONFIRM
-    tags        TEXT DEFAULT ''             -- 标签，逗号分隔，用于快速筛选，如 "授权,高风险,工具"
+    tags        TEXT DEFAULT '',            -- 标签，逗号分隔，用于快速筛选，如 "授权,高风险,工具"
+    zone        TEXT DEFAULT NULL           -- 记忆分区：PREFERENCE | EXPERIENCE | DECISION | ENTITY
 );
 
 -- 按类型查询索引（最常用）
@@ -44,3 +45,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_created
 -- 按类型+任务组合查询索引
 CREATE INDEX IF NOT EXISTS idx_memory_type_task
     ON memory_fragment(type, task_id);
+
+-- 按分区查询索引
+CREATE INDEX IF NOT EXISTS idx_memory_zone
+    ON memory_fragment(zone);

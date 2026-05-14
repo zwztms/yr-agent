@@ -10,6 +10,7 @@ import com.yragent.domain.gate.DeveloperUnderstanding;
 import com.yragent.domain.gate.GateReviewAttempt;
 import com.yragent.domain.gate.GateReviewNote;
 import com.yragent.domain.gate.PendingDecision;
+import com.yragent.domain.memory.ConversationHistory;
 import com.yragent.domain.memory.ProjectPolicy;
 import com.yragent.domain.memory.UserPreference;
 import com.yragent.domain.tool.ToolSelectionDecision;
@@ -64,6 +65,7 @@ public class TaskExecutionContext {
     private int currentRound = 0;
     private final List<RoundRecord> roundHistory = new ArrayList<>();
     private boolean completed = false;
+    private ConversationHistory conversationHistory = new ConversationHistory();
 
     public String getTaskId() {
         return taskId;
@@ -277,5 +279,13 @@ public class TaskExecutionContext {
 
     public void setCompleted(boolean completed) {
         this.completed = completed;
+    }
+
+    public ConversationHistory getConversationHistory() {
+        return conversationHistory;
+    }
+
+    public void setConversationHistory(ConversationHistory conversationHistory) {
+        this.conversationHistory = conversationHistory;
     }
 }

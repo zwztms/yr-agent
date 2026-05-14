@@ -4,6 +4,7 @@ import com.yragent.domain.goal.GoalAnalysis;
 import com.yragent.domain.goal.GoalClarification;
 import com.yragent.domain.gate.PendingDecision;
 import com.yragent.domain.gate.PendingDecisionType;
+import com.yragent.domain.memory.ContextAssembler;
 import com.yragent.domain.model.LlmClient;
 import com.yragent.domain.stage.StageResult;
 import com.yragent.domain.stage.StageType;
@@ -20,9 +21,12 @@ public class ClarifyGoalStageHandler implements StageHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ClarifyGoalStageHandler.class);
     private final LlmClient llmClient;
+    private final ContextAssembler contextAssembler;
 
-    public ClarifyGoalStageHandler(LlmClient llmClient) {
+    public ClarifyGoalStageHandler(LlmClient llmClient,
+                                    ContextAssembler contextAssembler) {
         this.llmClient = llmClient;
+        this.contextAssembler = contextAssembler;
     }
 
     @Override
@@ -45,8 +49,10 @@ public class ClarifyGoalStageHandler implements StageHandler {
         if (existingClarification != null && hasAnswers(existingClarification)) {
             // Developer has answered — refine the GoalAnalysis via LLM
             try {
-                String prompt = buildRefineGoalPrompt(currentGoal, existingClarification);
+                String contextPrefix = contextAssembler.renderContext(support(), context, 10);
+                String prompt = buildRefineGoalPrompt(currentGoal, existingClarification, contextPrefix);
                 String response = llmClient.structuredCompletion(prompt, GOAL_ANALYSIS_SCHEMA);
+                context.getConversationHistory().addTurn(prompt, response, support());
                 // The refined goal from LLM becomes the new goal
                 // For now, keep existing goal and mark clarification as resolved
                 GoalClarification completed = new GoalClarification(
@@ -68,8 +74,10 @@ public class ClarifyGoalStageHandler implements StageHandler {
         // First entry or no answers yet — generate clarification questions
         if (currentGoal.needsClarification() || "low".equalsIgnoreCase(currentGoal.confidence())) {
             try {
-                String prompt = buildClarifyPrompt(currentGoal);
+                String contextPrefix = contextAssembler.renderContext(support(), context, 10);
+                String prompt = buildClarifyPrompt(currentGoal, contextPrefix);
                 String response = llmClient.chatCompletion(prompt);
+                context.getConversationHistory().addTurn(prompt, response, support());
                 // Parse LLM response into questions
                 List<String> questions = parseQuestions(response);
                 List<PendingDecision> decisions = new ArrayList<>();
@@ -115,8 +123,8 @@ public class ClarifyGoalStageHandler implements StageHandler {
         return sb.toString();
     }
 
-    private String buildClarifyPrompt(GoalAnalysis goal) {
-        return """
+    private String buildClarifyPrompt(GoalAnalysis goal, String contextPrefix) {
+        return contextPrefix + """
             you are a software development consultant. based on the analysis of user requirements, generate 2-4 specific questions to clarify ambiguous points.
 
             current analysis:
@@ -141,7 +149,7 @@ public class ClarifyGoalStageHandler implements StageHandler {
                 goal.confidence());
     }
 
-    private String buildRefineGoalPrompt(GoalAnalysis goal, GoalClarification clarification) {
+    private String buildRefineGoalPrompt(GoalAnalysis goal, GoalClarification clarification, String contextPrefix) {
         StringBuilder qa = new StringBuilder();
         for (int i = 0; i < clarification.getQuestions().size(); i++) {
             qa.append("Q: ").append(clarification.getQuestions().get(i)).append("\n");
@@ -149,7 +157,7 @@ public class ClarifyGoalStageHandler implements StageHandler {
                     ? clarification.getAnswers().get(i) : "(unanswered)";
             qa.append("A: ").append(answer).append("\n");
         }
-        return """
+        return contextPrefix + """
             based on the developer's answers, revise the goal analysis.
 
             original analysis:

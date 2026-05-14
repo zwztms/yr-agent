@@ -22,4 +22,12 @@ public interface MemoryRepository {
     List<MemoryFragment> searchByKeyword(String keyword, MemoryType type, int limit);
 
     int deleteOlderThan(int days);
+
+    List<MemoryFragment> findByZone(MemoryZone zone, int limit);
+
+    List<MemoryFragment> findByZoneAndTaskId(MemoryZone zone, String taskId);
+
+    List<MemoryFragment> searchFts(String query, MemoryZone zone, int limit);
+
+    List<MemoryFragment> searchFts(String query, int limit);
 }

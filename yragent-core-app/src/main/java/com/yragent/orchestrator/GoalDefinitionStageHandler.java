@@ -1,6 +1,7 @@
 package com.yragent.orchestrator;
 
 import com.yragent.domain.goal.GoalAnalysis;
+import com.yragent.domain.memory.ContextAssembler;
 import com.yragent.domain.memory.MemoryFragment;
 import com.yragent.domain.memory.MemoryService;
 import com.yragent.domain.memory.ProjectPolicy;
@@ -25,13 +26,16 @@ public class GoalDefinitionStageHandler implements StageHandler {
     private final MemoryService memoryService;
     private final TraceRecorder traceRecorder;
     private final LlmClient llmClient;
+    private final ContextAssembler contextAssembler;
 
     public GoalDefinitionStageHandler(MemoryService memoryService,
                                        TraceRecorder traceRecorder,
-                                       LlmClient llmClient) {
+                                       LlmClient llmClient,
+                                       ContextAssembler contextAssembler) {
         this.memoryService = memoryService;
         this.traceRecorder = traceRecorder;
         this.llmClient = llmClient;
+        this.contextAssembler = contextAssembler;
     }
 
     @Override
@@ -63,9 +67,11 @@ public class GoalDefinitionStageHandler implements StageHandler {
         // LLM 目标分析。
         GoalAnalysis goalAnalysis;
         try {
-            String prompt = buildGoalAnalysisPrompt(context.getUserInput(), preference, policy);
+            String contextPrefix = contextAssembler.renderContext(support(), context, 10);
+            String prompt = buildGoalAnalysisPrompt(context.getUserInput(), preference, policy, contextPrefix);
             String llmResponse = llmClient.chatCompletion(prompt);
             goalAnalysis = parseGoalAnalysisResponse(llmResponse);
+            context.getConversationHistory().addTurn(prompt, llmResponse, support());
         } catch (Exception e) {
             log.warn("LLM 目标分析失败，使用空分析", e);
             goalAnalysis = GoalAnalysis.empty();
@@ -86,8 +92,9 @@ public class GoalDefinitionStageHandler implements StageHandler {
         return result;
     }
 
-    private String buildGoalAnalysisPrompt(String userInput, UserPreference preference, ProjectPolicy policy) {
+    private String buildGoalAnalysisPrompt(String userInput, UserPreference preference, ProjectPolicy policy, String contextPrefix) {
         StringBuilder sb = new StringBuilder();
+        sb.append(contextPrefix);
         sb.append("你是一个任务目标分析器。分析用户请求，提取结构化信息。\n\n");
         sb.append("用户请求: ").append(userInput).append("\n\n");
         sb.append("项目背景: projectType=").append(policy.getProjectType())

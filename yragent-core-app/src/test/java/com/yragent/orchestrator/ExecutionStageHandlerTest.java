@@ -4,6 +4,14 @@ import com.yragent.domain.execution.ExecutionPlan;
 import com.yragent.domain.execution.ExecutionPlanSerializer;
 import com.yragent.domain.execution.ExecutionResult;
 import com.yragent.domain.goal.GoalAnalysis;
+import com.yragent.domain.memory.ContextAssembler;
+import com.yragent.domain.memory.MemoryFragment;
+import com.yragent.domain.memory.MemoryRepository;
+import com.yragent.domain.memory.MemoryService;
+import com.yragent.domain.memory.MemoryType;
+import com.yragent.domain.memory.MemoryZone;
+import com.yragent.domain.memory.PolicySerializer;
+import com.yragent.domain.memory.PreferenceSerializer;
 import com.yragent.domain.model.LlmClient;
 import com.yragent.domain.planning.ApproachPlan;
 import com.yragent.domain.stage.StageResult;
@@ -38,12 +46,31 @@ class ExecutionStageHandlerTest {
     }
 
     private ExecutionStageHandler createHandler(LlmClient llmClient) {
+        MemoryRepository repo = new MemoryRepository() {
+            private final java.util.Map<String, MemoryFragment> store = new java.util.concurrent.ConcurrentHashMap<>();
+            @Override public void save(MemoryFragment f) { store.put(f.getId(), f); }
+            @Override public java.util.Optional<MemoryFragment> findById(String id) { return java.util.Optional.ofNullable(store.get(id)); }
+            @Override public void update(MemoryFragment f) { store.put(f.getId(), f); }
+            @Override public void deleteById(String id) { store.remove(id); }
+            @Override public java.util.List<MemoryFragment> findByType(MemoryType t, int l) { return java.util.List.of(); }
+            @Override public java.util.List<MemoryFragment> findByTaskId(String id) { return java.util.List.of(); }
+            @Override public java.util.List<MemoryFragment> findByTypeAndTaskId(MemoryType t, String id) { return java.util.List.of(); }
+            @Override public java.util.List<MemoryFragment> searchByKeyword(String k, MemoryType t, int l) { return java.util.List.of(); }
+            @Override public int deleteOlderThan(int d) { return 0; }
+            @Override public java.util.List<MemoryFragment> findByZone(MemoryZone z, int l) { return java.util.List.of(); }
+            @Override public java.util.List<MemoryFragment> findByZoneAndTaskId(MemoryZone z, String id) { return java.util.List.of(); }
+            @Override public java.util.List<MemoryFragment> searchFts(String q, MemoryZone z, int l) { return java.util.List.of(); }
+            @Override public java.util.List<MemoryFragment> searchFts(String q, int l) { return java.util.List.of(); }
+        };
+        MemoryService memoryService = new MemoryService(repo, new PreferenceSerializer(), new PolicySerializer());
+        ContextAssembler contextAssembler = new ContextAssembler(memoryService);
         return new ExecutionStageHandler(
                 new TraceRecorder(),
                 llmClient,
                 toolExecutor,
                 planSerializer,
-                toolRegistry
+                toolRegistry,
+                contextAssembler
         );
     }
 
@@ -191,7 +218,17 @@ class ExecutionStageHandlerTest {
         }
 
         @Override
+        public String chatCompletion(List<Map<String, String>> messages) {
+            return response;
+        }
+
+        @Override
         public String structuredCompletion(String prompt, String schema) {
+            return response;
+        }
+
+        @Override
+        public String structuredCompletion(List<Map<String, String>> messages, String schema) {
             return response;
         }
     }
@@ -211,7 +248,18 @@ class ExecutionStageHandlerTest {
         }
 
         @Override
+        public String chatCompletion(List<Map<String, String>> messages) {
+            this.lastPrompt = messages.toString();
+            return response;
+        }
+
+        @Override
         public String structuredCompletion(String prompt, String schema) {
+            return response;
+        }
+
+        @Override
+        public String structuredCompletion(List<Map<String, String>> messages, String schema) {
             return response;
         }
 

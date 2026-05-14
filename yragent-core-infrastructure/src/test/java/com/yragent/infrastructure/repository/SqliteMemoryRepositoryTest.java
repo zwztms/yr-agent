@@ -35,7 +35,8 @@ class SqliteMemoryRepositoryTest {
                     updated_at TEXT NOT NULL,
                     task_id TEXT DEFAULT NULL,
                     stage TEXT DEFAULT NULL,
-                    tags TEXT DEFAULT ''
+                    tags TEXT DEFAULT '',
+                    zone TEXT DEFAULT NULL
                 )
                 """);
         repository = new SqliteMemoryRepository(jdbcTemplate);
@@ -162,7 +163,8 @@ class SqliteMemoryRepositoryTest {
                 java.time.Instant.now(),
                 fragment.getTaskId(),
                 fragment.getStage(),
-                List.of("新标签")
+                List.of("新标签"),
+                fragment.getZone()
         );
         repository.update(updated);
 

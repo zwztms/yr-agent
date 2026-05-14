@@ -4,7 +4,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-// 记忆片段：记忆系统中统一的持久化对象。不可变，通过工厂方法创建。
 public class MemoryFragment {
 
     private final String id;
@@ -17,10 +16,11 @@ public class MemoryFragment {
     private final String taskId;
     private final String stage;
     private final List<String> tags;
+    private final MemoryZone zone;
 
     private MemoryFragment(String id, MemoryType type, String title, String content,
                           double priority, Instant createdAt, Instant updatedAt,
-                          String taskId, String stage, List<String> tags) {
+                          String taskId, String stage, List<String> tags, MemoryZone zone) {
         this.id = id;
         this.type = type;
         this.title = title;
@@ -31,43 +31,49 @@ public class MemoryFragment {
         this.taskId = taskId;
         this.stage = stage;
         this.tags = tags;
+        this.zone = zone;
     }
 
-    // 新建记忆的工厂方法，自动生成 id 和时间戳。
     public static MemoryFragment create(MemoryType type, String title, String content,
                                         double priority, String taskId, String stage,
                                         List<String> tags) {
         Instant now = Instant.now();
         return new MemoryFragment(
-                UUID.randomUUID().toString(),
-                type,
-                title != null ? title : "",
-                content,
+                UUID.randomUUID().toString(), type,
+                title != null ? title : "", content,
                 Math.max(0.0, Math.min(1.0, priority)),
-                now,
-                now,
-                taskId,
-                stage,
-                tags != null ? List.copyOf(tags) : List.of()
+                now, now, taskId, stage,
+                tags != null ? List.copyOf(tags) : List.of(),
+                MemoryZone.from(type)
         );
     }
 
-    // 从数据库还原已有记忆。
+    public static MemoryFragment create(MemoryType type, String title, String content,
+                                        double priority, String taskId, String stage,
+                                        List<String> tags, MemoryZone zone) {
+        Instant now = Instant.now();
+        return new MemoryFragment(
+                UUID.randomUUID().toString(), type,
+                title != null ? title : "", content,
+                Math.max(0.0, Math.min(1.0, priority)),
+                now, now, taskId, stage,
+                tags != null ? List.copyOf(tags) : List.of(),
+                zone != null ? zone : MemoryZone.from(type)
+        );
+    }
+
     public static MemoryFragment restore(String id, MemoryType type, String title,
                                         String content, double priority,
                                         Instant createdAt, Instant updatedAt,
-                                        String taskId, String stage, List<String> tags) {
+                                        String taskId, String stage, List<String> tags,
+                                        MemoryZone zone) {
         return new MemoryFragment(
-                id,
-                type,
-                title != null ? title : "",
-                content,
+                id, type,
+                title != null ? title : "", content,
                 Math.max(0.0, Math.min(1.0, priority)),
-                createdAt,
-                updatedAt,
-                taskId,
-                stage,
-                tags != null ? List.copyOf(tags) : List.of()
+                createdAt, updatedAt, taskId, stage,
+                tags != null ? List.copyOf(tags) : List.of(),
+                zone
         );
     }
 
@@ -109,5 +115,9 @@ public class MemoryFragment {
 
     public List<String> getTags() {
         return tags;
+    }
+
+    public MemoryZone getZone() {
+        return zone != null ? zone : MemoryZone.from(type);
     }
 }

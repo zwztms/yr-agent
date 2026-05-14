@@ -10,6 +10,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.util.List;
+import java.util.Map;
+
 @Component
 @ConditionalOnProperty(prefix = "yragent.llm", name = "provider", havingValue = "spring-ai-alibaba")
 public class SpringAiAlibabaLlmClient implements LlmClient {
@@ -38,6 +41,12 @@ public class SpringAiAlibabaLlmClient implements LlmClient {
     }
 
     @Override
+    public String chatCompletion(List<Map<String, String>> messages) {
+        String prompt = messagesToString(messages);
+        return chatCompletion(prompt);
+    }
+
+    @Override
     public String structuredCompletion(String prompt, String schema) {
         return getChatClient()
                 .prompt()
@@ -45,6 +54,34 @@ public class SpringAiAlibabaLlmClient implements LlmClient {
                 .user(prompt)
                 .call()
                 .content();
+    }
+
+    @Override
+    public String structuredCompletion(List<Map<String, String>> messages, String schema) {
+        String system = null;
+        StringBuilder user = new StringBuilder();
+        for (Map<String, String> m : messages) {
+            if ("system".equals(m.get("role"))) {
+                system = m.get("content");
+            } else {
+                user.append(m.get("content")).append("\n");
+            }
+        }
+        if (system == null) system = buildStructuredSystemPrompt(schema);
+        return getChatClient()
+                .prompt()
+                .system(system)
+                .user(user.toString())
+                .call()
+                .content();
+    }
+
+    private String messagesToString(List<Map<String, String>> messages) {
+        StringBuilder sb = new StringBuilder();
+        for (Map<String, String> m : messages) {
+            sb.append("[").append(m.get("role")).append("]: ").append(m.get("content")).append("\n");
+        }
+        return sb.toString();
     }
 
     private ChatClient getChatClient() {

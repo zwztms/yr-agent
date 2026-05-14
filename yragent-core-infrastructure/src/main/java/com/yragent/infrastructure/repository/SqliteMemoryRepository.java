@@ -3,6 +3,7 @@ package com.yragent.infrastructure.repository;
 import com.yragent.domain.memory.MemoryFragment;
 import com.yragent.domain.memory.MemoryRepository;
 import com.yragent.domain.memory.MemoryType;
+import com.yragent.domain.memory.MemoryZone;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -27,8 +28,8 @@ public class SqliteMemoryRepository implements MemoryRepository {
     @Override
     public void save(MemoryFragment fragment) {
         jdbcTemplate.update(
-                "INSERT INTO memory_fragment (id, type, title, content, priority, created_at, updated_at, task_id, stage, tags) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO memory_fragment (id, type, title, content, priority, created_at, updated_at, task_id, stage, tags, zone) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 fragment.getId(),
                 fragment.getType().name(),
                 fragment.getTitle(),
@@ -38,7 +39,8 @@ public class SqliteMemoryRepository implements MemoryRepository {
                 fragment.getUpdatedAt().toString(),
                 fragment.getTaskId(),
                 fragment.getStage(),
-                tagsToString(fragment.getTags())
+                tagsToString(fragment.getTags()),
+                fragment.getZone() != null ? fragment.getZone().name() : null
         );
     }
 
@@ -55,13 +57,14 @@ public class SqliteMemoryRepository implements MemoryRepository {
     @Override
     public void update(MemoryFragment fragment) {
         jdbcTemplate.update(
-                "UPDATE memory_fragment SET title=?, content=?, priority=?, updated_at=?, stage=?, tags=? WHERE id=?",
+                "UPDATE memory_fragment SET title=?, content=?, priority=?, updated_at=?, stage=?, tags=?, zone=? WHERE id=?",
                 fragment.getTitle(),
                 fragment.getContent(),
                 fragment.getPriority(),
                 fragment.getUpdatedAt().toString(),
                 fragment.getStage(),
                 tagsToString(fragment.getTags()),
+                fragment.getZone() != null ? fragment.getZone().name() : null,
                 fragment.getId()
         );
     }
@@ -136,6 +139,64 @@ public class SqliteMemoryRepository implements MemoryRepository {
         );
     }
 
+    @Override
+    public List<MemoryFragment> findByZone(MemoryZone zone, int limit) {
+        return jdbcTemplate.query(
+                "SELECT m.* FROM memory_fragment m WHERE (m.zone = ? OR (m.zone IS NULL AND m.type IN (?, ?))) "
+                        + "ORDER BY m.priority DESC, m.created_at DESC LIMIT ?",
+                rowMapper,
+                zone.name(),
+                typeForZone(zone, true),
+                typeForZone(zone, false),
+                limit
+        );
+    }
+
+    @Override
+    public List<MemoryFragment> findByZoneAndTaskId(MemoryZone zone, String taskId) {
+        return jdbcTemplate.query(
+                "SELECT m.* FROM memory_fragment m WHERE (m.zone = ? OR (m.zone IS NULL AND m.type IN (?, ?))) "
+                        + "AND m.task_id = ? ORDER BY m.created_at ASC",
+                rowMapper,
+                zone.name(),
+                typeForZone(zone, true),
+                typeForZone(zone, false),
+                taskId
+        );
+    }
+
+    @Override
+    public List<MemoryFragment> searchFts(String query, MemoryZone zone, int limit) {
+        String ftsQuery = query.trim().replaceAll("\\s+", " ");
+        if (zone != null) {
+            return jdbcTemplate.query(
+                    "SELECT m.* FROM memory_fragment m INNER JOIN memory_fts f ON m.id = f.id "
+                            + "WHERE memory_fts MATCH ? AND f.zone = ? ORDER BY rank LIMIT ?",
+                    rowMapper, ftsQuery, zone.name(), limit
+            );
+        } else {
+            return jdbcTemplate.query(
+                    "SELECT m.* FROM memory_fragment m INNER JOIN memory_fts f ON m.id = f.id "
+                            + "WHERE memory_fts MATCH ? ORDER BY rank LIMIT ?",
+                    rowMapper, ftsQuery, limit
+            );
+        }
+    }
+
+    @Override
+    public List<MemoryFragment> searchFts(String query, int limit) {
+        return searchFts(query, null, limit);
+    }
+
+    private String typeForZone(MemoryZone zone, boolean first) {
+        return switch (zone) {
+            case PREFERENCE -> first ? "USER_PREFERENCE" : "PROJECT_POLICY";
+            case EXPERIENCE -> first ? "FAILURE_PATTERN" : "FAILURE_PATTERN";
+            case DECISION -> first ? "DECISION" : "GATE_ATTEMPT";
+            case ENTITY -> first ? "TASK_STATE" : "TASK_STATE";
+        };
+    }
+
     private String tagsToString(List<String> tags) {
         if (tags == null || tags.isEmpty()) {
             return "";
@@ -157,6 +218,7 @@ public class SqliteMemoryRepository implements MemoryRepository {
 
         @Override
         public MemoryFragment mapRow(ResultSet rs, int rowNum) throws SQLException {
+            MemoryZone zone = parseZone(rs.getString("zone"));
             return MemoryFragment.restore(
                     rs.getString("id"),
                     MemoryType.valueOf(rs.getString("type")),
@@ -167,8 +229,18 @@ public class SqliteMemoryRepository implements MemoryRepository {
                     parseInstant(rs.getString("updated_at")),
                     rs.getString("task_id"),
                     rs.getString("stage"),
-                    parseTags(rs.getString("tags"))
+                    parseTags(rs.getString("tags")),
+                    zone
             );
+        }
+
+        private MemoryZone parseZone(String value) {
+            if (value == null || value.isBlank()) return null;
+            try {
+                return MemoryZone.valueOf(value);
+            } catch (Exception e) {
+                return null;
+            }
         }
 
         private Instant parseInstant(String value) {

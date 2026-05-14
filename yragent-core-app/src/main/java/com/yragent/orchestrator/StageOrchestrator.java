@@ -4,6 +4,7 @@ import com.yragent.domain.memory.MemoryFragment;
 import com.yragent.domain.memory.MemoryService;
 import com.yragent.domain.memory.MemoryType;
 import com.yragent.domain.memory.TaskStateSnapshot;
+import com.yragent.domain.model.LlmClient;
 import com.yragent.domain.stage.RoundRecord;
 import com.yragent.domain.stage.StageResult;
 import com.yragent.domain.stage.StageType;
@@ -27,13 +28,16 @@ public class StageOrchestrator {
 
     private final Map<StageType, StageHandler> handlers = new EnumMap<>(StageType.class);
     private final MemoryService memoryService;
+    private final LlmClient llmClient;
     private final ObjectMapper objectMapper;
 
-    public StageOrchestrator(List<StageHandler> stageHandlers, MemoryService memoryService) {
+    public StageOrchestrator(List<StageHandler> stageHandlers, MemoryService memoryService,
+                             LlmClient llmClient) {
         for (StageHandler handler : stageHandlers) {
             handlers.put(handler.support(), handler);
         }
         this.memoryService = memoryService;
+        this.llmClient = llmClient;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
     }
@@ -86,14 +90,14 @@ public class StageOrchestrator {
 
             StageResult result = handler.handle(context);
             context.addStageNote(stageType + ": " + result.getSummary());
-            // 阶段结果会被回写到上下文，供 CLI 输出和后续阶段读取。
             context.replacePendingDecisions(result.getPendingDecisions());
             context.setCurrentStageSummary(result.getStageSummary());
             context.setGateReviewNote(result.getGateReviewNote());
             context.setNextAction(result.getNextAction());
             context.setFailureReason(result.getFailureReason());
-            // 每个阶段完成后保存任务状态快照，供中断恢复使用。
             saveTaskSnapshot(context, stageType);
+            memoryService.captureStageOutput(context, stageType, result);
+            context.getConversationHistory().compressIfNeeded(llmClient, 20);
             // 某阶段未通过时立即停线。
             if (!result.isPassed()) {
                 break;

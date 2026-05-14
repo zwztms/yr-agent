@@ -1,5 +1,6 @@
 package com.yragent.orchestrator;
 
+import com.yragent.domain.memory.ContextAssembler;
 import com.yragent.domain.model.LlmClient;
 import com.yragent.domain.stage.StageResult;
 import com.yragent.domain.stage.StageType;
@@ -20,10 +21,14 @@ public class VerificationStageHandler implements StageHandler {
 
     private final TraceRecorder traceRecorder;
     private final LlmClient llmClient;
+    private final ContextAssembler contextAssembler;
 
-    public VerificationStageHandler(TraceRecorder traceRecorder, LlmClient llmClient) {
+    public VerificationStageHandler(TraceRecorder traceRecorder,
+                                    LlmClient llmClient,
+                                    ContextAssembler contextAssembler) {
         this.traceRecorder = traceRecorder;
         this.llmClient = llmClient;
+        this.contextAssembler = contextAssembler;
     }
 
     @Override
@@ -44,12 +49,14 @@ public class VerificationStageHandler implements StageHandler {
         }
 
         // 构建验证提示词。
-        String prompt = buildVerificationPrompt(context, executionResult);
+        String contextPrefix = contextAssembler.renderContext(support(), context, 10);
+        String prompt = buildVerificationPrompt(context, executionResult, contextPrefix);
         log.info("验证阶段：请求 LLM 评估执行结果");
 
         VerificationResult verificationResult;
         try {
             String llmResponse = llmClient.chatCompletion(prompt);
+            context.getConversationHistory().addTurn(prompt, llmResponse, support());
             verificationResult = parseVerificationResponse(llmResponse);
         } catch (Exception e) {
             log.warn("LLM 验证调用失败，默认通过", e);
@@ -80,8 +87,10 @@ public class VerificationStageHandler implements StageHandler {
     }
 
     private String buildVerificationPrompt(TaskExecutionContext context,
-                                           com.yragent.domain.execution.ExecutionResult executionResult) {
+                                           com.yragent.domain.execution.ExecutionResult executionResult,
+                                           String contextPrefix) {
         StringBuilder sb = new StringBuilder();
+        sb.append(contextPrefix);
         sb.append("你是一个任务验证器。评估执行结果是否满足用户需求。\n\n");
         sb.append("用户需求: ").append(context.getUserInput()).append("\n\n");
 

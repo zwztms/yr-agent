@@ -3,6 +3,7 @@ package com.yragent.orchestrator;
 import com.yragent.domain.gate.GateCheckResult;
 import com.yragent.domain.gate.GateReviewAttempt;
 import com.yragent.domain.gate.StageGateEngine;
+import com.yragent.domain.memory.ContextAssembler;
 import com.yragent.domain.memory.GateReviewAttemptSerializer;
 import com.yragent.domain.memory.MemoryFragment;
 import com.yragent.domain.memory.MemoryService;
@@ -26,15 +27,18 @@ public class GateConfirmStageHandler implements StageHandler {
     private final StageGateEngine stageGateEngine;
     private final MemoryService memoryService;
     private final GateReviewAttemptSerializer attemptSerializer;
+    private final ContextAssembler contextAssembler;
 
     public GateConfirmStageHandler(TraceRecorder traceRecorder,
                                    StageGateEngine stageGateEngine,
                                    MemoryService memoryService,
-                                   GateReviewAttemptSerializer attemptSerializer) {
+                                   GateReviewAttemptSerializer attemptSerializer,
+                                   ContextAssembler contextAssembler) {
         this.traceRecorder = traceRecorder;
         this.stageGateEngine = stageGateEngine;
         this.memoryService = memoryService;
         this.attemptSerializer = attemptSerializer;
+        this.contextAssembler = contextAssembler;
     }
 
     @Override

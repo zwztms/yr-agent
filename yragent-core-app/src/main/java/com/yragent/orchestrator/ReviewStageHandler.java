@@ -1,5 +1,6 @@
 package com.yragent.orchestrator;
 
+import com.yragent.domain.memory.ContextAssembler;
 import com.yragent.domain.model.LlmClient;
 import com.yragent.domain.planning.PlanDocument;
 import com.yragent.domain.stage.RoundRecord;
@@ -23,11 +24,15 @@ public class ReviewStageHandler implements StageHandler {
 
     private final TraceRecorder traceRecorder;
     private final LlmClient llmClient;
+    private final ContextAssembler contextAssembler;
     private final ObjectMapper objectMapper;
 
-    public ReviewStageHandler(TraceRecorder traceRecorder, LlmClient llmClient) {
+    public ReviewStageHandler(TraceRecorder traceRecorder,
+                              LlmClient llmClient,
+                              ContextAssembler contextAssembler) {
         this.traceRecorder = traceRecorder;
         this.llmClient = llmClient;
+        this.contextAssembler = contextAssembler;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -41,7 +46,8 @@ public class ReviewStageHandler implements StageHandler {
         traceRecorder.recordStageStart(context.getTaskId(), support());
 
         // 构建结构化审查提示词，聚合所有阶段信息
-        String prompt = buildReviewPrompt(context);
+        String contextPrefix = contextAssembler.renderContext(support(), context, 10);
+        String prompt = buildReviewPrompt(context, contextPrefix);
         log.info("审查阶段：请求 LLM 生成结构化审查（第{}轮）", context.getCurrentRound());
 
         String reviewSummary;
@@ -49,6 +55,7 @@ public class ReviewStageHandler implements StageHandler {
         List<String> nextRoundFocus = List.of();
         try {
             String llmResponse = llmClient.structuredCompletion(prompt, REVIEW_RESPONSE_SCHEMA);
+            context.getConversationHistory().addTurn(prompt, llmResponse, support());
             llmResponse = cleanResponse(llmResponse);
             log.debug("LLM 审查原始响应: {}", llmResponse);
 
@@ -106,8 +113,9 @@ public class ReviewStageHandler implements StageHandler {
         return result;
     }
 
-    private String buildReviewPrompt(TaskExecutionContext context) {
+    private String buildReviewPrompt(TaskExecutionContext context, String contextPrefix) {
         StringBuilder sb = new StringBuilder();
+        sb.append(contextPrefix);
         sb.append("你是一个项目审查器。审查当前轮次的完整执行轨迹，判断项目是否完成。\n\n");
         sb.append("用户原始需求: ").append(context.getUserInput()).append("\n\n");
 

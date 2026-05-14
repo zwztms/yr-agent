@@ -13,6 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -255,7 +256,17 @@ class StageGateEngineTest {
         }
 
         @Override
+        public String chatCompletion(List<Map<String, String>> messages) {
+            throw new UnsupportedOperationException("chat is not implemented");
+        }
+
+        @Override
         public String structuredCompletion(String prompt, String schema) {
+            throw new UnsupportedOperationException("structured review is not implemented");
+        }
+
+        @Override
+        public String structuredCompletion(List<Map<String, String>> messages, String schema) {
             throw new UnsupportedOperationException("structured review is not implemented");
         }
     }
@@ -274,7 +285,17 @@ class StageGateEngineTest {
         }
 
         @Override
+        public String chatCompletion(List<Map<String, String>> messages) {
+            return response;
+        }
+
+        @Override
         public String structuredCompletion(String prompt, String schema) {
+            return response;
+        }
+
+        @Override
+        public String structuredCompletion(List<Map<String, String>> messages, String schema) {
             return response;
         }
     }

@@ -3,6 +3,7 @@ package com.yragent.orchestrator;
 import com.yragent.domain.execution.ExecutionPlan;
 import com.yragent.domain.execution.ExecutionPlanSerializer;
 import com.yragent.domain.execution.ExecutionResult;
+import com.yragent.domain.memory.ContextAssembler;
 import com.yragent.domain.model.LlmClient;
 import com.yragent.domain.stage.StageResult;
 import com.yragent.domain.stage.StageType;
@@ -30,17 +31,20 @@ public class ExecutionStageHandler implements StageHandler {
     private final ToolExecutor toolExecutor;
     private final ExecutionPlanSerializer planSerializer;
     private final ToolRegistry toolRegistry;
+    private final ContextAssembler contextAssembler;
 
     public ExecutionStageHandler(TraceRecorder traceRecorder,
                                  LlmClient llmClient,
                                  ToolExecutor toolExecutor,
                                  ExecutionPlanSerializer planSerializer,
-                                 ToolRegistry toolRegistry) {
+                                 ToolRegistry toolRegistry,
+                                 ContextAssembler contextAssembler) {
         this.traceRecorder = traceRecorder;
         this.llmClient = llmClient;
         this.toolExecutor = toolExecutor;
         this.planSerializer = planSerializer;
         this.toolRegistry = toolRegistry;
+        this.contextAssembler = contextAssembler;
     }
 
     @Override
@@ -53,12 +57,14 @@ public class ExecutionStageHandler implements StageHandler {
         traceRecorder.recordStageStart(context.getTaskId(), support());
 
         // 构建执行计划提示词。
-        String prompt = buildExecutionPrompt(context);
+        String contextPrefix = contextAssembler.renderContext(support(), context, 10);
+        String prompt = buildExecutionPrompt(context, contextPrefix);
         log.info("执行阶段：请求 LLM 生成执行计划");
 
         ExecutionPlan plan;
         try {
             String llmResponse = llmClient.chatCompletion(prompt);
+            context.getConversationHistory().addTurn(prompt, llmResponse, support());
             plan = planSerializer.deserializeFromLlmOutput(llmResponse);
         } catch (Exception e) {
             log.warn("LLM 执行计划生成失败，使用空计划", e);
@@ -111,8 +117,9 @@ public class ExecutionStageHandler implements StageHandler {
         return result;
     }
 
-    private String buildExecutionPrompt(TaskExecutionContext context) {
+    private String buildExecutionPrompt(TaskExecutionContext context, String contextPrefix) {
         StringBuilder sb = new StringBuilder();
+        sb.append(contextPrefix);
         sb.append("你是一个任务执行规划器。根据以下信息生成执行计划。\n\n");
         sb.append("用户需求: ").append(context.getUserInput()).append("\n\n");
 

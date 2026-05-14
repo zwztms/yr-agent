@@ -46,11 +46,31 @@ public class DeepSeekCompatibleLlmClient implements LlmClient {
     }
 
     @Override
+    public String chatCompletion(List<Map<String, String>> messages) {
+        List<Map<String, Object>> converted = messages.stream()
+                .<Map<String, Object>>map(m -> Map.copyOf(m))
+                .toList();
+        return requestCompletion(converted, false);
+    }
+
+    @Override
     public String structuredCompletion(String prompt, String schema) {
         return requestCompletion(List.of(
                 message("system", buildStructuredSystemPrompt(schema)),
                 message("user", prompt)
         ), true);
+    }
+
+    @Override
+    public String structuredCompletion(List<Map<String, String>> messages, String schema) {
+        List<Map<String, Object>> converted = new java.util.ArrayList<>(messages.stream()
+                .<Map<String, Object>>map(m -> Map.copyOf(m))
+                .toList());
+        boolean hasSystem = messages.stream().anyMatch(m -> "system".equals(m.get("role")));
+        if (!hasSystem) {
+            converted.add(0, message("system", buildStructuredSystemPrompt(schema)));
+        }
+        return requestCompletion(converted, true);
     }
 
     private String requestCompletion(List<Map<String, Object>> messages, boolean jsonOutput) {

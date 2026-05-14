@@ -71,7 +71,37 @@ public class FakeMemoryRepository implements MemoryRepository {
 
     @Override
     public int deleteOlderThan(int days) {
-        // No-op for fake
         return 0;
+    }
+
+    @Override
+    public List<MemoryFragment> findByZone(MemoryZone zone, int limit) {
+        return store.values().stream()
+                .filter(f -> f.getZone() == zone)
+                .sorted(Comparator.comparingDouble(MemoryFragment::getPriority).reversed()
+                        .thenComparing(Comparator.comparing(MemoryFragment::getCreatedAt).reversed()))
+                .limit(limit)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<MemoryFragment> findByZoneAndTaskId(MemoryZone zone, String taskId) {
+        return store.values().stream()
+                .filter(f -> f.getZone() == zone && Objects.equals(f.getTaskId(), taskId))
+                .sorted(Comparator.comparing(MemoryFragment::getCreatedAt))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<MemoryFragment> searchFts(String query, MemoryZone zone, int limit) {
+        return searchByKeyword(query, null, limit).stream()
+                .filter(f -> zone == null || f.getZone() == zone)
+                .limit(limit)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<MemoryFragment> searchFts(String query, int limit) {
+        return searchFts(query, null, limit);
     }
 }

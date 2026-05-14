@@ -7,6 +7,7 @@ import com.yragent.domain.stage.StageType;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -22,7 +23,9 @@ class CoverageReviewStepTest {
     void shouldParseLlmResponseCorrectly() {
         LlmClient llm = new LlmClient() {
             @Override public String chatCompletion(String p) { return "{}"; }
+            @Override public String chatCompletion(List<Map<String, String>> m) { return "{}"; }
             @Override public String structuredCompletion(String p, String s) { return VALID_LLM_RESPONSE; }
+            @Override public String structuredCompletion(List<Map<String, String>> m, String s) { return VALID_LLM_RESPONSE; }
         };
 
         List<GateCheckItem> items = List.of(
@@ -43,7 +46,11 @@ class CoverageReviewStepTest {
     void shouldFallbackWhenLlmFails() {
         LlmClient llm = new LlmClient() {
             @Override public String chatCompletion(String p) { return "{}"; }
+            @Override public String chatCompletion(List<Map<String, String>> m) { return "{}"; }
             @Override public String structuredCompletion(String p, String s) {
+                throw new RuntimeException("API error");
+            }
+            @Override public String structuredCompletion(List<Map<String, String>> m, String s) {
                 throw new RuntimeException("API error");
             }
         };
@@ -62,7 +69,9 @@ class CoverageReviewStepTest {
     void shouldFallbackWhenInvalidJson() {
         LlmClient llm = new LlmClient() {
             @Override public String chatCompletion(String p) { return "{}"; }
+            @Override public String chatCompletion(List<Map<String, String>> m) { return "{}"; }
             @Override public String structuredCompletion(String p, String s) { return "not json"; }
+            @Override public String structuredCompletion(List<Map<String, String>> m, String s) { return "not json"; }
         };
 
         CoverageReviewStep step = new CoverageReviewStep(llm);
@@ -77,7 +86,9 @@ class CoverageReviewStepTest {
     void shouldHandleEmptyChecklist() {
         LlmClient llm = new LlmClient() {
             @Override public String chatCompletion(String p) { return "{}"; }
+            @Override public String chatCompletion(List<Map<String, String>> m) { return "{}"; }
             @Override public String structuredCompletion(String p, String s) { return VALID_LLM_RESPONSE; }
+            @Override public String structuredCompletion(List<Map<String, String>> m, String s) { return VALID_LLM_RESPONSE; }
         };
         CoverageReviewStep step = new CoverageReviewStep(llm);
         List<ItemCoverage> result = step.review(List.of(), "x", StageType.PLANNING, "t", "p");

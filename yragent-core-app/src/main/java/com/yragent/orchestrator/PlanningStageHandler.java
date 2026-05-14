@@ -1,6 +1,7 @@
 package com.yragent.orchestrator;
 
 import com.yragent.domain.goal.GoalAnalysis;
+import com.yragent.domain.memory.ContextAssembler;
 import com.yragent.domain.memory.MemoryService;
 import com.yragent.domain.memory.ProjectPolicy;
 import com.yragent.domain.model.LlmClient;
@@ -30,16 +31,19 @@ public class PlanningStageHandler implements StageHandler {
     private final ToolsetSelector toolsetSelector;
     private final MemoryService memoryService;
     private final LlmClient llmClient;
+    private final ContextAssembler contextAssembler;
     private final ObjectMapper objectMapper;
 
     public PlanningStageHandler(TraceRecorder traceRecorder,
                                 ToolsetSelector toolsetSelector,
                                 MemoryService memoryService,
-                                LlmClient llmClient) {
+                                LlmClient llmClient,
+                                ContextAssembler contextAssembler) {
         this.traceRecorder = traceRecorder;
         this.toolsetSelector = toolsetSelector;
         this.memoryService = memoryService;
         this.llmClient = llmClient;
+        this.contextAssembler = contextAssembler;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -67,9 +71,11 @@ public class PlanningStageHandler implements StageHandler {
         GoalAnalysis goalAnalysis = context.getGoalAnalysis();
         ApproachPlan approachPlan;
         try {
+            String contextPrefix = contextAssembler.renderContext(support(), context, 10);
             String prompt = buildApproachPrompt(context.getUserInput(), goalAnalysis,
-                    decision.getAllowedTools(), policy);
+                    decision.getAllowedTools(), policy, contextPrefix);
             String llmResponse = llmClient.chatCompletion(prompt);
+            context.getConversationHistory().addTurn(prompt, llmResponse, support());
             approachPlan = parseApproachResponse(llmResponse);
         } catch (Exception e) {
             log.warn("LLM 规划失败，使用空规划", e);
@@ -82,8 +88,10 @@ public class PlanningStageHandler implements StageHandler {
 
         // 生成 PlanDocument（V2 详细计划书）
         try {
-            String planPrompt = buildPlanDocumentPrompt(context);
+            String contextPrefix = contextAssembler.renderContext(support(), context, 10);
+            String planPrompt = buildPlanDocumentPrompt(context, contextPrefix);
             String planResponse = llmClient.structuredCompletion(planPrompt, PLAN_DOCUMENT_SCHEMA);
+            context.getConversationHistory().addTurn(planPrompt, planResponse, support());
             PlanDocument planDocument = parsePlanDocumentResponse(planResponse);
             context.setPlanDocument(planDocument);
             log.info("PlanDocument 已生成: overview={}, steps={}, complexity={}",
@@ -121,8 +129,9 @@ public class PlanningStageHandler implements StageHandler {
 
     private String buildApproachPrompt(String userInput, GoalAnalysis goalAnalysis,
                                         List<com.yragent.domain.tool.ToolCapability> availableTools,
-                                        ProjectPolicy policy) {
+                                        ProjectPolicy policy, String contextPrefix) {
         StringBuilder sb = new StringBuilder();
+        sb.append(contextPrefix);
         sb.append("你是一个任务规划器。基于目标分析结果和方法规划。\n\n");
         sb.append("用户请求: ").append(userInput).append("\n\n");
 
@@ -201,7 +210,7 @@ public class PlanningStageHandler implements StageHandler {
 
     // ===== PlanDocument generation helpers =====
 
-    private String buildPlanDocumentPrompt(TaskExecutionContext context) {
+    private String buildPlanDocumentPrompt(TaskExecutionContext context, String contextPrefix) {
         GoalAnalysis goal = context.getGoalAnalysis();
         String goalInfo;
         if (goal != null && !goal.equals(GoalAnalysis.empty())) {
@@ -211,7 +220,7 @@ public class PlanningStageHandler implements StageHandler {
             goalInfo = "用户需求: " + context.getUserInput();
         }
 
-        return """
+        return contextPrefix + """
                 你是项目规划专家。根据目标分析生成完整计划书。
 
                 目标分析：%s
